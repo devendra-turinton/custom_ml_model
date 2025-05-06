@@ -15,8 +15,7 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, RobustScaler
 from src import ml_utils
 from training_pipeline import BasePipeline
 logger = logging.getLogger(__name__)
-
-
+logging.getLogger(__name__).setLevel(logging.DEBUG)
 
 
 #########################################

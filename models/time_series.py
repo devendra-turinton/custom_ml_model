@@ -15,8 +15,7 @@ from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from src import ml_utils
 from training_pipeline import BasePipeline
 logger = logging.getLogger(__name__)
-
-# For Time Series pipeline
+logging.getLogger(__name__).setLevel(logging.DEBUG)
 from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 

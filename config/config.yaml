@@ -10,7 +10,7 @@ common:
 
   custom_ml_model:
     enabled: false  # Toggle for custom model flow
-    function_path: ""  # Path to Python module with custom function
+    function_path: "/home/devendra_yadav/custom_ml_model/custom_ml_data/custom_code/input/123456789/v1/custom_code.py"  # Path to Python module with custom function
     function_name: "run_custom_pipeline"  # Name of function to call
   
   # Output settings
@@ -76,6 +76,42 @@ regression:
         learning_rate: 0.1
       
       
+  random_search:
+    enabled: true
+    n_iter: 20      # Number of parameter combinations to try
+    cv: 5           # Cross-validation folds
+    verbose: 1
+    models:
+      random_forest:
+        enabled: true
+        parameters:
+          n_estimators: [50, 100, 150, 200]
+          max_depth: [5, 10, 15, 20, 25, 30, null]
+          min_samples_split: [2, 5, 10]
+          min_samples_leaf: [1, 2, 4]
+          max_features: ["sqrt", "log2", null]
+      
+      gradient_boosting:
+        enabled: true
+        parameters:
+          n_estimators: [50, 100, 150, 200]
+          learning_rate: [0.01, 0.05, 0.1, 0.15, 0.2]
+          max_depth: [2, 3, 4, 5, 6]
+          min_samples_split: [2, 5, 10]
+          subsample: [0.7, 0.8, 0.9, 1.0]
+      
+      elastic_net:
+        enabled: true
+        parameters:
+          alpha: [0.0001, 0.001, 0.01, 0.1, 0.5, 1.0, 10.0]
+          l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
+      
+      ridge:
+        enabled: false
+        parameters:
+          alpha: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+  
+
   
   # Evaluation metrics
   evaluation:
@@ -123,6 +159,45 @@ classification:
       knn:
         n_neighbors: 5
   
+  # Random Search configuration
+  random_search:
+    enabled: true
+    n_iter: 20      # Number of parameter combinations to try
+    cv: 5           # Cross-validation folds
+    verbose: 1
+    models:
+      random_forest:
+        enabled: true
+        parameters:
+          n_estimators: [50, 100, 150, 200]
+          max_depth: [5, 10, 15, 20, 25, null]
+          min_samples_split: [2, 5, 10]
+          min_samples_leaf: [1, 2, 4]
+          max_features: ["sqrt", "log2", null]
+      
+      gradient_boosting:
+        enabled: true
+        parameters:
+          n_estimators: [50, 100, 150, 200]
+          learning_rate: [0.01, 0.05, 0.1, 0.2]
+          max_depth: [2, 3, 4, 5]
+          min_samples_split: [2, 5, 10]
+          subsample: [0.7, 0.8, 0.9, 1.0]
+      
+      logistic_regression:
+        enabled: true
+        parameters:
+          C: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+          solver: ["lbfgs", "liblinear", "saga"]
+          penalty: ["l1", "l2", "elasticnet", null]
+      
+      knn:
+        enabled: true
+        parameters:
+          n_neighbors: [3, 5, 7, 9, 11, 13]
+          weights: ["uniform", "distance"]
+          p: [1, 2]  # Manhattan or Euclidean distance
+  
   # Evaluation metrics
   evaluation:
     primary_metric: "accuracy"  # The metric used to select the best model
@@ -134,6 +209,7 @@ classification:
     # Prediction storage settings
     store_predictions: true  # Whether to store test set predictions
     max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
+
 
 # Clustering specific settings
 clustering:
