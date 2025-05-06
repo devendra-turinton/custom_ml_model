@@ -1,0 +1,202 @@
+# Common settings across all pipeline types
+common:
+  # Logging configuration
+  logging:
+    level: INFO
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file_level: DEBUG
+    console_level: INFO
+    log_dir: "logs"
+  
+  # Output settings
+  output:
+    base_dir: "outputs"
+    save_metadata: true
+    max_versions: 5
+  
+  # Data processing
+  preprocessing:
+    # Outlier handling
+    outlier_detection:
+      method: "iqr"  # Options: "iqr", "zscore"
+      threshold: 1.5  # For IQR: typically 1.5, For zscore: typically 3.0
+      strategy: "clip"  # Options: "clip", "remove", "none"
+    
+    # Missing value handling
+    missing_values:
+      numeric_strategy: "mean"  # Options: "mean", "median", "most_frequent", "constant"
+      categorical_strategy: "most_frequent"  # Options: "most_frequent", "constant"
+  
+  # Feature engineering
+  feature_engineering:
+    scaling: "standard"  # Options: "standard", "minmax", "robust", "none"
+  
+  # Train/Test split
+  train_test_split:
+    test_size: 0.2
+    random_state: 42
+    stratify: true  # Will be ignored for regression
+
+# Regression specific settings
+regression:
+  models:
+    enabled:
+      - linear_regression
+      - ridge
+      - lasso
+      - elastic_net
+      - decision_tree
+      - random_forest
+      - gradient_boosting
+    
+    # Model specific parameters
+    parameters:
+      # Linear models
+      ridge:
+        alpha: 1.0
+      lasso:
+        alpha: 0.1
+      elastic_net:
+        alpha: 0.1
+        l1_ratio: 0.5
+      
+      # Tree-based models
+      decision_tree:
+        max_depth: 10
+      random_forest:
+        n_estimators: 100
+        max_depth: null
+      gradient_boosting:
+        n_estimators: 100
+        learning_rate: 0.1
+      
+      
+  
+  # Evaluation metrics
+  evaluation:
+    primary_metric: "r2"  # The metric used to select the best model
+    metrics:
+      - r2
+      - rmse
+      - mae
+      - mape
+
+    # Prediction storage settings
+    store_predictions: true  # Whether to store test set predictions
+    max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
+
+# Classification specific settings
+classification:  
+  class_handling:
+    balance_method: null  # Options: null, "smote", "class_weight"
+    multi_class: "auto"  # Options: "auto", "ovr", "multinomial"
+  
+  # Standard models configuration
+  models:
+    # Which models to train if custom models not used
+    enabled:
+      - logistic_regression
+      - decision_tree
+      - random_forest
+      - gradient_boosting
+      - knn
+      - naive_bayes
+    
+    # Model specific parameters
+    parameters:
+      logistic_regression:
+        C: 1.0
+        max_iter: 1000
+      decision_tree:
+        max_depth: 10
+      random_forest:
+        n_estimators: 100
+        max_depth: null
+      gradient_boosting:
+        n_estimators: 100
+        learning_rate: 0.1
+      knn:
+        n_neighbors: 5
+  
+  # Evaluation metrics
+  evaluation:
+    primary_metric: "accuracy"  # The metric used to select the best model
+    metrics:
+      - accuracy
+      - precision
+      - recall
+      - f1
+    # Prediction storage settings
+    store_predictions: true  # Whether to store test set predictions
+    max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
+
+# Clustering specific settings
+clustering:
+  
+  # Preprocessing
+  preprocessing:
+    # Feature selection
+    feature_selection: 
+      enabled: false
+    # Scaling method
+    scaling: "standard"  # Options: "standard", "minmax", "robust", "none"
+  
+  # Dimensionality reduction
+  dimensionality_reduction:
+    method: "pca"  # Options: "pca", "tsne", "none"
+    n_components: 2  # Number of components to reduce to
+    
+  # Models configuration
+  models:
+    # Which models to train
+    enabled:
+      - kmeans
+      - agglomerative
+      - gmm
+      - dbscan
+      - birch
+    
+    # Default parameters
+    parameters:
+      kmeans:
+        n_init: 10
+      dbscan:
+        eps_auto: true  # Auto-estimate epsilon
+      
+  # Evaluation metrics
+  evaluation:
+    primary_metric: "silhouette"  # The metric used to select the best model
+    metrics:
+      - silhouette
+      - calinski_harabasz
+      - davies_bouldin
+
+# Time series specific settings
+time_series:
+  # Preprocessing
+  preprocessing:
+    # Feature extraction
+    feature_extraction:
+      lag_orders: [1, 7, 14, 30]
+      rolling_windows: [7, 14, 30]
+      diff_orders: [1, 7]
+    # Scaling method
+    scaling: "minmax"  # Options: "standard", "minmax", "robust", "none"
+  
+  # Models configuration
+  models:
+    # Which models to train
+    enabled:
+      - RandomForest
+      - GradientBoosting
+      - LinearRegression
+      - Ridge
+      - ARIMA
+    
+    # ARIMA parameters
+    arima:
+      order: [1, 1, 1]
+    
+    # Evaluation metrics
+    evaluation:
+      primary_metric: "rmse"  # The metric used to select the best model

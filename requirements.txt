@@ -1,0 +1,29 @@
+# Core data science libraries
+numpy>=1.26.0
+pandas>=2.1.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+scikit-learn>=1.4.0
+statsmodels>=0.14.0
+
+# Additional ML packages
+imbalanced-learn>=0.12.0
+joblib>=1.3.2
+
+# Data handling
+pyyaml>=6.0.1  # For config parsing
+python-dateutil>=2.8.2
+pytz>=2023.3
+openpyxl>=3.1.2  # For Excel file support
+pyarrow>=14.0.0  # For parquet file support
+
+# Utilities
+setuptools>=69.0.0
+pillow>=10.0.0
+scipy>=1.12.0
+threadpoolctl>=3.2.0
+kneed>=0.8.5  # For elbow detection in clustering
+
+# Optional dependencies (commented out by default)
+# tensorflow>=2.15.0  # For LSTM and deep learning models
+# prophet>=1.1.5      # For Prophet models
