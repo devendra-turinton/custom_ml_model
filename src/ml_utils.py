@@ -1,13 +1,3 @@
-"""
-Utility functions for the custom ML pipeline.
-This file contains all shared functionality:
-- Configuration loading
-- Problem detection
-- Logging setup
-- Metadata handling
-- Custom transformers
-"""
-
 import os
 import json
 import yaml
@@ -15,7 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Union, Tuple
+from typing import Callable, Dict, List, Optional, Any, Union, Tuple
 from sklearn.base import BaseEstimator, TransformerMixin
 
 # Initialize logger
@@ -214,6 +204,37 @@ def detect_problem_type(
         logger.error(f"Error in problem type detection: {str(e)}")
         raise ValueError(f"Unable to determine problem type: {str(e)}")
 
+def load_custom_function(function_path: str, function_name: str) -> Optional[Callable]:
+    """
+    Dynamically load a custom function from specified path.
+    
+    Args:
+        function_path: Path to the Python file containing the function
+        function_name: Name of the function to load
+        
+    Returns:
+        Callable: The loaded function, or None if loading fails
+    """
+    try:
+        import importlib.util
+        import sys
+        
+        # Dynamically import the module
+        spec = importlib.util.spec_from_file_location("custom_module", function_path)
+        custom_module = importlib.util.module_from_spec(spec)
+        sys.modules["custom_module"] = custom_module
+        spec.loader.exec_module(custom_module)
+        
+        # Check if the module has the specified function
+        if hasattr(custom_module, function_name):
+            logger.info(f"Custom function '{function_name}' loaded from {function_path}")
+            return getattr(custom_module, function_name)
+        else:
+            logger.error(f"Custom module at {function_path} does not have function '{function_name}'")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to load custom function: {str(e)}")
+        return None
 
 #########################################
 # Logging Setup

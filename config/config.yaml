@@ -7,6 +7,11 @@ common:
     file_level: DEBUG
     console_level: INFO
     log_dir: "logs"
+
+  custom_ml_model:
+    enabled: false  # Toggle for custom model flow
+    function_path: ""  # Path to Python module with custom function
+    function_name: "run_custom_pipeline"  # Name of function to call
   
   # Output settings
   output:

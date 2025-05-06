@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-Testing pipeline for machine learning models.
-This script loads a trained model and makes predictions on new data.
-Supports both regression and classification models.
-"""
-
 import os
 import sys
 import argparse
@@ -21,7 +12,7 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics import (
     mean_squared_error, mean_absolute_error, r2_score, mean_absolute_percentage_error,
     accuracy_score, precision_score, recall_score, f1_score, confusion_matrix,
-    classification_report, roc_auc_score
+    classification_report
 )
 
 # Suppress common warnings
