@@ -1462,7 +1462,7 @@ def run_default_ml_pipeline(
     **kwargs
 ) -> tuple:
     """
-    Default ML pipeline implementation - wraps the existing pipeline classes.
+    Default ML pipeline implementation - refactored to match custom flow structure.
     
     Args:
         df: Input DataFrame
@@ -1479,280 +1479,169 @@ def run_default_ml_pipeline(
     import logging
     import pandas as pd
     from datetime import datetime
+    import pickle
+    import json
     
     # Set up logging
     logger = logging.getLogger(__name__)
     logger.info("Running default ML pipeline flow")
     start_time = datetime.now()
     
-    # Log input parameters
-    logger.debug(f"Input parameters - model_id: {model_id}, target: {target}")
-    logger.debug(f"DataFrame shape: {df.shape} - {df.shape[0]:,} rows, {df.shape[1]:,} columns")
-    logger.debug(f"Output directory: {output_dir}")
-    
     # Extract additional parameters from kwargs
     version = kwargs.get('version', 'v1')
     time_col = kwargs.get('time_col', None)
     forecast_horizon = kwargs.get('forecast_horizon', 7)
+    data_path = kwargs.get('data_path', None)
+    config_path = kwargs.get('config_path', None)
     
-    logger.debug(f"Additional parameters - version: {version}, time_col: {time_col}, forecast_horizon: {forecast_horizon}")
+    # Create version directory
+    versioned_output_dir, version_num = get_next_version_dir(
+        output_dir, model_id,
+        max_versions=config.get('common', {}).get('output', {}).get('max_versions', 5)
+    )
+    
+    # Ensure versioned directory exists
+    os.makedirs(versioned_output_dir, exist_ok=True)
+    logger.info(f"Using versioned output directory: {versioned_output_dir} (v{version_num})")
     
     # Log column data types
     dtypes_summary = df.dtypes.value_counts().to_dict()
     logger.debug(f"DataFrame column types: {dtypes_summary}")
     
-    # Check for missing values
-    missing_values = df.isnull().sum().sum()
-    if missing_values > 0:
-        missing_pct = (missing_values / df.size) * 100
-        logger.debug(f"Found {missing_values:,} missing values ({missing_pct:.2f}% of all cells)")
-        
-        # Log columns with highest missing values
-        cols_with_missing = df.columns[df.isnull().any()].tolist()
-        missing_by_col = df[cols_with_missing].isnull().sum().sort_values(ascending=False)
-        logger.debug(f"Top columns with missing values: {dict(missing_by_col.head(5))}")
-    else:
-        logger.debug("No missing values found in the dataset")
+    # Initialize metadata
+    metadata = initialize_metadata()
+    metadata["model_id"] = model_id
+    metadata["version"] = f"v{version_num}"
+    metadata["data"] = {
+        "shape": df.shape,
+        "columns": list(df.columns),
+        "dtypes": {str(col): str(dtype) for col, dtype in df.dtypes.items()}
+    }
     
     try:
-        # Create a temporary file to save the DataFrame if needed
-        # This is only needed if your pipelines require a file path rather than a DataFrame
-        temp_file = False
-        data_path = kwargs.get('data_path', None)
-        
-        if data_path is None or not os.path.exists(data_path):
-            # Create temporary directory if needed
-            temp_dir = os.path.join(output_dir, "temp")
-            os.makedirs(temp_dir, exist_ok=True)
-            data_path = os.path.join(temp_dir, f"temp_data_{model_id}.csv")
-            
-            logger.debug(f"Creating temporary data file at: {data_path}")
-            temp_file_start = datetime.now()
-            df.to_csv(data_path, index=False)
-            temp_file_time = (datetime.now() - temp_file_start).total_seconds()
-            
-            file_size_mb = os.path.getsize(data_path) / (1024 * 1024)
-            temp_file = True
-            logger.info(f"Created temporary data file at {data_path} ({file_size_mb:.2f} MB) in {temp_file_time:.2f} seconds")
-        else:
-            # Check existing file size
-            file_size_mb = os.path.getsize(data_path) / (1024 * 1024)
-            logger.debug(f"Using existing data file: {data_path} ({file_size_mb:.2f} MB)")
-        
         # Detect problem type if target exists
         if target is not None:
-            logger.debug(f"Attempting to detect problem type for target column: '{target}'")
-            
-            try:
-                # Log target column statistics
-                if target in df.columns:
-                    is_numeric = pd.api.types.is_numeric_dtype(df[target])
-                    unique_values = df[target].nunique()
-                    unique_pct = (unique_values / len(df)) * 100
-                    
-                    logger.debug(f"Target column '{target}' statistics:")
-                    logger.debug(f"  - Data type: {df[target].dtype}")
-                    logger.debug(f"  - Is numeric: {is_numeric}")
-                    logger.debug(f"  - Unique values: {unique_values:,} ({unique_pct:.2f}% of rows)")
-                    
-                    if is_numeric:
-                        # Log numeric target stats
-                        num_stats = df[target].describe()
-                        logger.debug(f"  - Min: {num_stats['min']}, Max: {num_stats['max']}")
-                        logger.debug(f"  - Mean: {num_stats['mean']}, Median: {num_stats['50%']}")
-                    else:
-                        # Log categorical target stats
-                        value_counts = df[target].value_counts()
-                        top_classes = dict(value_counts.head(3))
-                        bottom_classes = dict(value_counts.tail(3))
-                        logger.debug(f"  - Most common classes: {top_classes}")
-                        logger.debug(f"  - Least common classes: {bottom_classes}")
-                else:
-                    logger.warning(f"Target column '{target}' not found in DataFrame columns: {df.columns.tolist()}")
-            except Exception as e:
-                logger.warning(f"Error analyzing target column: {str(e)}")
-            
-            # Detect problem type
-            problem_type_start = datetime.now()
             problem_type = detect_problem_type(df, target, config)
-            problem_type_time = (datetime.now() - problem_type_start).total_seconds()
-            logger.info(f"Detected problem type: {problem_type} in {problem_type_time:.2f} seconds")
+            logger.info(f"Detected problem type: {problem_type}")
+            metadata["parameters"]["problem_type"] = problem_type
         else:
             problem_type = 'clustering'
             logger.info("No target column provided. Using clustering pipeline.")
+            metadata["parameters"]["problem_type"] = problem_type
         
         # Initialize the appropriate pipeline based on problem type
-        pipeline_init_start = datetime.now()
+        pipeline_args = {
+            'df': df,
+            'data_path': data_path,
+            'target': target,
+            'model_id': model_id,
+            'output_dir': versioned_output_dir,
+            'config_path': config_path
+        }
+        
+        logger.info(f"Initializing {problem_type} pipeline")
         
         if problem_type == 'regression':
-            logger.info("Initializing Regression Pipeline")
+            from models.regression import RegressionPipeline
+            pipeline = RegressionPipeline(**pipeline_args)
             
-            # Log common regression metrics for reference
-            logger.debug("Common metrics for this problem type: RMSE, MAE, R², MSE")
-            
-            pipeline = RegressionPipeline(
-                df=df,  # Pass DataFrame directly
-                data_path=data_path,
-                target=target,
-                model_id=model_id,
-                output_dir=output_dir,
-                config_path=kwargs.get('config_path', None)
-            )
         elif problem_type == 'classification':
-            logger.info("Initializing Classification Pipeline")
+            from models.classification import ClassificationPipeline
+            pipeline = ClassificationPipeline(**pipeline_args)
             
-            # Check class distribution for classification
-            if target in df.columns:
-                class_counts = df[target].value_counts(normalize=True) * 100
-                min_class_pct = class_counts.min()
-                max_class_pct = class_counts.max()
-                
-                if min_class_pct < 10:  # If imbalanced classes
-                    logger.warning(f"Class imbalance detected: minority class represents only {min_class_pct:.2f}% of data")
-                    logger.debug(f"Class distribution: {dict(class_counts)}")
-                
-                logger.debug(f"Classification problem with {len(class_counts)} classes")
-                logger.debug(f"Class balance ratio (min/max): {min_class_pct:.2f}% / {max_class_pct:.2f}%")
-                logger.debug("Common metrics for this problem type: Accuracy, Precision, Recall, F1-score")
-            
-            pipeline = ClassificationPipeline(
-                df=df,
-                data_path=data_path,
-                target=target,
-                model_id=model_id,
-                output_dir=output_dir,
-                config_path=kwargs.get('config_path', None)
-            )
         elif problem_type == 'clustering':
-            logger.info("Initializing Clustering Pipeline")
+            from models.cluster import ClusteringPipeline
+            pipeline = ClusteringPipeline(**pipeline_args)
             
-            # Log clustering-specific information
-            numeric_cols = df.select_dtypes(include=['number']).columns
-            logger.debug(f"Clustering with {len(numeric_cols)} numeric features out of {df.shape[1]} total columns")
-            logger.debug("Common metrics for this problem type: Silhouette score, Inertia, Davies-Bouldin index")
-            
-            pipeline = ClusteringPipeline(
-                df=df,
-                data_path=data_path,
-                model_id=model_id,
-                output_dir=output_dir,
-                config_path=kwargs.get('config_path', None)
-            )
         elif problem_type == 'time_series':
-            logger.info("Initializing Time Series Pipeline")
-            
-            # Check time column for time series
-            if time_col in df.columns:
-                logger.debug(f"Time column '{time_col}' details:")
-                logger.debug(f"  - Data type: {df[time_col].dtype}")
-                
-                if pd.api.types.is_datetime64_any_dtype(df[time_col]):
-                    time_range = df[time_col].max() - df[time_col].min()
-                    n_periods = len(df[time_col].unique())
-                    logger.debug(f"  - Date range: {df[time_col].min()} to {df[time_col].max()} ({time_range})")
-                    logger.debug(f"  - Unique time periods: {n_periods}")
-                    logger.debug(f"  - Forecast horizon: {forecast_horizon} periods")
-                else:
-                    logger.warning(f"Time column '{time_col}' is not a datetime type: {df[time_col].dtype}")
-            else:
-                logger.warning(f"Time column '{time_col}' not found in DataFrame columns: {df.columns.tolist()}")
-            
-            logger.debug("Common metrics for this problem type: RMSE, MAE, MAPE, AIC, BIC")
-            
+            from models.time_series import TimeSeriesPipeline
             pipeline = TimeSeriesPipeline(
-                df=df,
-                data_path=data_path,
-                target=target,
+                **pipeline_args,
                 time_col=time_col,
-                model_id=model_id,
-                output_dir=output_dir,
-                config_path=kwargs.get('config_path', None),
                 forecast_horizon=forecast_horizon
             )
         else:
             logger.warning(f"Problem type '{problem_type}' not fully implemented yet")
             logger.info("Defaulting to Regression Pipeline")
-            pipeline = RegressionPipeline(
-                df=df,
-                data_path=data_path,
-                target=target,
-                model_id=model_id,
-                output_dir=output_dir,
-                config_path=kwargs.get('config_path', None)
-            )
-        
-        pipeline_init_time = (datetime.now() - pipeline_init_start).total_seconds()
-        logger.debug(f"Pipeline initialized in {pipeline_init_time:.2f} seconds")
+            from models.regression import RegressionPipeline
+            pipeline = RegressionPipeline(**pipeline_args)
         
         # Run the pipeline
         logger.info(f"Running {problem_type} pipeline...")
-        run_start = datetime.now()
+        best_model, results = pipeline.run_pipeline()
         
-        try:
-            # Log system resources before running
+        # Ensure model file path exists
+        model_path = os.path.join(versioned_output_dir, f"{model_id}.pkl")
+        metadata_path = os.path.join(versioned_output_dir, "metadata.json")
+        
+        # If run_pipeline didn't save the model for some reason, save it manually
+        if not os.path.exists(model_path) and best_model is not None:
+            logger.info(f"Saving best model to {model_path}")
             try:
-                import psutil
-                memory_info = psutil.virtual_memory()
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                logger.debug(f"System resources before pipeline: CPU {cpu_percent}%, RAM {memory_info.percent}% (Available: {memory_info.available / (1024**3):.2f} GB)")
-            except ImportError:
-                logger.debug("psutil not available for resource monitoring")
-        
-            best_model, results = pipeline.run_pipeline()
-            run_time = (datetime.now() - run_start).total_seconds()
-            logger.info(f"Pipeline execution completed in {run_time:.2f} seconds")
-            
-            # Log system resources after running
-            try:
-                import psutil
-                memory_info = psutil.virtual_memory()
-                cpu_percent = psutil.cpu_percent(interval=0.1)
-                logger.debug(f"System resources after pipeline: CPU {cpu_percent}%, RAM {memory_info.percent}% (Available: {memory_info.available / (1024**3):.2f} GB)")
-            except ImportError:
-                pass
-        except Exception as e:
-            run_time = (datetime.now() - run_start).total_seconds()
-            logger.error(f"Pipeline execution failed after {run_time:.2f} seconds: {str(e)}")
-            raise
-        
-        # Extract paths from pipeline
-        model_path = os.path.join(pipeline.output_dir, f"{model_id}.pkl")
-        metadata_path = os.path.join(pipeline.output_dir, "metadata.json")
-        
-        # Log model file information
-        if os.path.exists(model_path):
-            model_size_mb = os.path.getsize(model_path) / (1024 * 1024)
-            logger.info(f"Model saved to {model_path} ({model_size_mb:.2f} MB)")
-        else:
-            logger.warning(f"Model file not found at {model_path}")
-            
-        # Log metadata file information    
-        if os.path.exists(metadata_path):
-            metadata_size_kb = os.path.getsize(metadata_path) / 1024
-            logger.info(f"Metadata saved to {metadata_path} ({metadata_size_kb:.2f} KB)")
-            
-            # Try to extract key metrics from metadata
-            try:
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
+                # Check if preprocessor is available
+                if hasattr(pipeline, 'preprocessor') and pipeline.preprocessor is not None:
+                    # Create a complete pipeline
+                    from sklearn.pipeline import Pipeline as SklearnPipeline
+                    complete_model = SklearnPipeline([
+                        ('preprocessor', pipeline.preprocessor),
+                        ('model', best_model)
+                    ])
+                    
+                    with open(model_path, 'wb') as f:
+                        pickle.dump(complete_model, f)
+                else:
+                    # Just save the model
+                    with open(model_path, 'wb') as f:
+                        pickle.dump(best_model, f)
                 
-                if 'best_model' in metadata:
-                    best_model_name = metadata['best_model'].get('name', 'Unknown')
-                    metrics = {k: v for k, v in metadata['best_model'].items() if 'metric' in k.lower()}
-                    logger.info(f"Best model: {best_model_name} with metrics: {metrics}")
+                logger.info(f"Model saved to {model_path}")
             except Exception as e:
-                logger.debug(f"Could not extract metrics from metadata: {str(e)}")
-        else:
-            logger.warning(f"Metadata file not found at {metadata_path}")
+                logger.error(f"Error saving model: {str(e)}")
         
-        # Clean up temporary file if created
-        if temp_file and os.path.exists(data_path):
+        # If metadata file wasn't saved, save it manually
+        if not os.path.exists(metadata_path):
+            logger.info(f"Saving metadata to {metadata_path}")
             try:
-                logger.debug(f"Removing temporary data file: {data_path}")
-                os.remove(data_path)
-                logger.info(f"Removed temporary data file {data_path}")
+                # Add runtime information
+                metadata["runtime_seconds"] = (datetime.now() - start_time).total_seconds()
+                metadata["status"] = "completed"
+                metadata["end_time"] = datetime.now().isoformat()
+                
+                # Add model information if available
+                if pipeline.metadata.get('best_model'):
+                    metadata['best_model'] = pipeline.metadata['best_model']
+                elif hasattr(pipeline, 'best_model') and pipeline.best_model is not None:
+                    metadata['best_model'] = {
+                        "name": "best_model",
+                        "model_type": str(type(pipeline.best_model))
+                    }
+                
+                # Add results information if available
+                if results is not None and not results.empty:
+                    metadata['evaluation'] = {
+                        "results_summary": results.to_dict(orient='records')[:5]  # Include first 5 models
+                    }
+                
+                with open(metadata_path, 'w') as f:
+                    # Handle objects that can't be serialized to JSON
+                    class NpEncoder(json.JSONEncoder):
+                        def default(self, obj):
+                            import numpy as np
+                            if isinstance(obj, np.integer):
+                                return int(obj)
+                            if isinstance(obj, np.floating):
+                                return float(obj)
+                            if isinstance(obj, np.ndarray):
+                                return obj.tolist()
+                            if isinstance(obj, datetime):
+                                return obj.isoformat()
+                            return super(NpEncoder, self).default(obj)
+                    
+                    json.dump(metadata, f, indent=2, cls=NpEncoder)
+                
+                logger.info(f"Metadata saved to {metadata_path}")
             except Exception as e:
-                logger.warning(f"Failed to clean up temporary file: {str(e)}")
+                logger.error(f"Error saving metadata: {str(e)}")
         
         total_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Default ML pipeline completed in {total_time:.2f} seconds")
@@ -1763,24 +1652,32 @@ def run_default_ml_pipeline(
         total_time = (datetime.now() - start_time).total_seconds()
         logger.error(f"Error in default pipeline after {total_time:.2f} seconds: {str(e)}", exc_info=True)
         
-        # Try to log more context about the error
+        # Save error metadata
         try:
-            import traceback
-            err_trace = traceback.format_exc()
-            logger.debug(f"Error traceback:\n{err_trace}")
+            error_metadata = {
+                "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "model_id": model_id,
+                "version": f"v{version_num}",
+                "status": "failed",
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "start_time": start_time.isoformat(),
+                "end_time": datetime.now().isoformat(),
+                "runtime_seconds": total_time
+            }
             
-            # Log system state
-            logger.debug("Error context:")
-            logger.debug(f"  - Problem type: {problem_type if 'problem_type' in locals() else 'unknown'}")
-            logger.debug(f"  - Data path: {data_path if 'data_path' in locals() else 'unknown'}")
+            error_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
             
-            if 'df' in locals():
-                logger.debug(f"  - DataFrame shape: {df.shape}")
-                logger.debug(f"  - DataFrame columns: {df.columns.tolist()}")
+            with open(error_metadata_path, 'w') as f:
+                json.dump(error_metadata, f, indent=2)
             
-        except Exception as context_error:
-            logger.debug(f"Could not log error context: {str(context_error)}")
-        
+            logger.info(f"Error metadata saved to {error_metadata_path}")
+            
+            return None, None, None, error_metadata_path
+        except Exception as err:
+            logger.error(f"Failed to save error metadata: {str(err)}")
+            raise
+            
         raise
 
 def run_custom_ml_flow(args, config, df, input_dir, output_dir):
