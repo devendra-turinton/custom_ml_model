@@ -126,6 +126,7 @@ regression:
     store_predictions: true  # Whether to store test set predictions
     max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
 
+
 # Classification specific settings
 classification:  
   class_handling:
