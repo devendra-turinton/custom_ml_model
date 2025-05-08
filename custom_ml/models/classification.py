@@ -3,9 +3,8 @@ import numpy as np
 import pandas as pd
 import logging
 import os
-import sys
 import traceback
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional, Tuple
 
 from sklearn.calibration import LabelEncoder
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
@@ -16,8 +15,8 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
-from src import ml_utils
-from training_pipeline import BasePipeline
+from custom_ml.src import ml_utils
+from custom_ml.training_pipeline import BasePipeline
 logger = logging.getLogger(__name__)
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
@@ -319,9 +318,6 @@ class ClassificationPipeline(BasePipeline):
         validation_time = (datetime.now() - validation_start_time).total_seconds()
         logger.info(f"Data validation completed in {validation_time:.2f} seconds")
         
-        # Store validation results in metadata
-        validation_results['validation_time_seconds'] = validation_time
-        self.metadata['data']['validation'] = validation_results
         
         return True
     

@@ -7,8 +7,8 @@ import traceback
 from typing import Any, Dict, Tuple
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, Ridge
-from src import ml_utils
-from training_pipeline import BasePipeline
+from custom_ml.src import ml_utils
+from custom_ml.training_pipeline import BasePipeline
 logger = logging.getLogger(__name__)
 logging.getLogger(__name__).setLevel(logging.DEBUG)
 from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
@@ -262,10 +262,6 @@ class RegressionPipeline(BasePipeline):
         validation_time = (datetime.now() - validation_start_time).total_seconds()
         logger.info(f"Data validation complete in {validation_time:.2f} seconds")
         logger.info(f"Target column '{self.target}' summary: Min={target_stats['min']:.4g}, Max={target_stats['max']:.4g}, Mean={target_stats['mean']:.4g}, Std={target_stats['std']:.4g}")
-        
-        # Store validation results in metadata
-        validation_results['validation_time_seconds'] = validation_time
-        self.metadata['data']['validation'] = validation_results
         
         return True
     

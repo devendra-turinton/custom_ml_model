@@ -12,7 +12,9 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
-import src.ml_utils as ml_utils
+import custom_ml.src.ml_utils as ml_utils
+from ml_api.config import ML_CONFIG
+
 
 # Get the logger
 logger = logging.getLogger(__name__)
@@ -31,14 +33,15 @@ class BasePipeline(ABC):
     """
     
     def __init__(
-            self,
-            data_path: Optional[str] = None,
-            df: Optional[pd.DataFrame] = None,
-            target: Optional[str] = None,
-            config_path: Optional[str] = "config/config.yaml",
-            output_dir: Optional[str] = None,
-            model_id: Optional[str] = None
-        ):
+        self,
+        data_path: Optional[str] = None,
+        df: Optional[pd.DataFrame] = None,
+        target: Optional[str] = None,
+        config_path: Optional[str] = "config/config.yaml",
+        output_dir: Optional[str] = None,  # This should be the versioned directory
+        model_id: Optional[str] = None,
+        version: Optional[str] = None
+    ):
         """
         Initialize the base pipeline.
         
@@ -47,8 +50,9 @@ class BasePipeline(ABC):
             df: DataFrame (alternative to data_path)
             target: Name of the target column
             config_path: Path to configuration file
-            output_dir: Directory for outputs
+            output_dir: Versioned output directory
             model_id: Unique identifier for the model
+            version: Version string (e.g., 'v1', 'v2')
         """
         # Log initialization start
         logger.info("Initializing pipeline...")
@@ -59,50 +63,54 @@ class BasePipeline(ABC):
         self.df = df
         self.target = target
         self.model_id = model_id or f"model_{self.timestamp}"
+        self.version = version or "v1"
         
-        # Set up directories
-        if output_dir:
-            self.base_output_dir = output_dir
-        else:
-            self.base_output_dir = os.path.join("custom_ml_data", "training", "output", self.model_id)
+        # Use the provided output directory directly (should be versioned)
+        self.output_dir = output_dir
+        if not self.output_dir:
+            # Fallback in case no output_dir is provided
+            self.output_dir = os.path.join("data", "training", "output", self.model_id, self.version)
+            os.makedirs(self.output_dir, exist_ok=True)
+            logger.warning(f"No output directory provided, using fallback: {self.output_dir}")
         
-        # Get version directory
-        self.output_dir, self.version_num = ml_utils.get_next_version_dir(
-            self.base_output_dir, self.model_id
-        )
-        self.version = f"v{self.version_num}"
-        
-        # Create output directory
-        os.makedirs(self.output_dir, exist_ok=True)
-        logger.debug(f"Created output directory: {self.output_dir}")
+        logger.debug(f"Using output directory: {self.output_dir}")
         
         # Load configuration
-        try:
-            logger.info(f"Loading configuration from {config_path}")
-            self.config = ml_utils.load_config(config_path)
-            logger.debug(f"Configuration loaded successfully: {json.dumps(self.config, indent=2, default=str)}")
-        except Exception as e:
-            logger.warning(f"Failed to load config from {config_path}: {str(e)}. Using defaults.", exc_info=True)
-            self.config = {}
+        self.config = ML_CONFIG
+        logger.debug("Using main application configuration")
+
         
-        # Set up logging
-        logging_config = self.config.get('common', {}).get('logging', {})
-        self.logger = ml_utils.setup_logging(
-            log_dir=self.output_dir,  # Use version folder directly, not a logs subfolder
-            level=logging_config.get('level', 'INFO'),
-            console_level=logging_config.get('console_level', 'INFO'),
-            file_level=logging_config.get('file_level', 'DEBUG'),
-            log_format=logging_config.get('format', "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
+        # With this code:
+        log_file = os.path.join(self.output_dir, "pipeline.log")  # Use a fixed name without timestamp
+        # Check if a handler for this log file already exists
+        log_exists = False
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.FileHandler) and hasattr(handler, 'baseFilename'):
+                if os.path.abspath(handler.baseFilename) == os.path.abspath(log_file):
+                    log_exists = True
+                    self.file_handler = handler  # Store existing handler
+                    logger.debug(f"Using existing log file: {log_file}")
+                    break
+
+        # Only create a new handler if one doesn't exist for this file
+        if not log_exists:
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+            root_logger.addHandler(file_handler)
+            self.file_handler = file_handler
+            logger.debug(f"Created new log file: {log_file}")
 
         logger.info(f"Logging initialized - Output directory: {self.output_dir}")
+        
         # Initialize metadata
         self.metadata = ml_utils.initialize_metadata()
         self.metadata['parameters'].update({
             'data_path': self.data_path,
             'target': self.target,
             'model_id': self.model_id,
-            'version': self.version
+            'version': self.version,
+            'output_dir': self.output_dir
         })
         
         # Common parameters from config
@@ -122,17 +130,8 @@ class BasePipeline(ABC):
         self.best_model = None
         self.preprocessor = None
         
-        # Log system resources at initialization
-        try:
-            import psutil
-            memory_info = psutil.virtual_memory()
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            logger.info(f"System resources at initialization: CPU {cpu_percent}%, RAM {memory_info.percent}% (Available: {memory_info.available / (1024**3):.2f} GB)")
-        except ImportError:
-            logger.debug("psutil not available for resource monitoring")
-        
-        logger.info(f"{self.__class__.__name__} initialized - ID: {self.model_id}, Version: {self.version}")
-    
+        logger.info(f"{self.__class__.__name__} initialized - ID: {self.model_id}, Version: {self.version}, Output: {self.output_dir}")
+
     def load_data(self) -> pd.DataFrame:
         """
         Load data from file or use provided DataFrame.

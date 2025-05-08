@@ -87,6 +87,7 @@ data/interim/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/interim/.gitkeep
+data
 
 # Environment variables
 .env

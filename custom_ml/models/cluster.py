@@ -136,8 +136,6 @@ class ClusteringPipeline(BasePipeline):
         else:
             validation_results['columns_with_missing'] = {}
         
-        # Store validation results in metadata
-        self.metadata['data']['validation'] = validation_results
         
         logger.info(f"Data validated: {len(self.df.columns)} feature columns available for clustering")
         

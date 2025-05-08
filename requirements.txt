@@ -24,6 +24,18 @@ scipy>=1.12.0
 threadpoolctl>=3.2.0
 kneed>=0.8.5  # For elbow detection in clustering
 psutil>=5.9.8
+Flask==3.0.2
+Werkzeug==3.0.2
+celery==5.3.6
+redis==5.0.3
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.4.2
+PyYAML==6.0.1
+
+
+
+
 # Optional dependencies (commented out by default)
 # tensorflow>=2.15.0  # For LSTM and deep learning models
 # prophet>=1.1.5      # For Prophet models

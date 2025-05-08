@@ -92,7 +92,7 @@ def get_next_version_dir(base_output_dir, model_id, max_versions=5):
 class ModelPredictor:
     """Base class for model prediction."""
 
-    def __init__(self, model_dir=None, output_dir=None, model_id=None):
+    def __init__(self, model_dir=None, output_dir=None, model_id=None, base_data_dir=None):
         """
         Initialize predictor with model ID or directory.
         
@@ -100,6 +100,7 @@ class ModelPredictor:
             model_dir (str): Directory containing the trained model and metadata
             output_dir (str): Directory to save prediction results and logs
             model_id (str): Unique identifier for the model
+            base_data_dir (str): Base data directory (optional, overrides default)
         """
         # Log initialization start
         print(f"Initializing ModelPredictor...")
@@ -107,14 +108,14 @@ class ModelPredictor:
         # Initialize timestamp for this run
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Use home directory 
-        home_dir = os.path.expanduser("~")
-        
         # Store model_id
         self.model_id = model_id
         
         # Set up paths based on project structure
-        base_data_dir = os.path.join(home_dir, "custom_ml_model", "custom_ml_data")
+        if base_data_dir is None:
+            # Use default path based on home directory
+            home_dir = os.path.expanduser("~")
+            base_data_dir = os.path.join(home_dir, "custom_ml_model", "custom_ml_data")
         
         # Determine model_dir if model_id is provided but model_dir isn't
         if model_id and not model_dir:
@@ -145,22 +146,26 @@ class ModelPredictor:
         self.model_dir = model_dir
         
         # Set up versioned output directory
-        if model_id:
+        if output_dir:
+            # Use the provided output directory directly
+            self.output_dir = output_dir
+            # Extract version from the path
+            basename = os.path.basename(output_dir)
+            self.version = basename if basename.startswith('v') else "v1"
+            print(f"Using provided output directory: {self.output_dir} (version: {self.version})")
+        elif model_id:
             # Base output directory for testing results
             test_out_base = os.path.join(base_data_dir, "testing", "output")
             
             # Get next version directory
             self.output_dir, version_num = get_next_version_dir(test_out_base, model_id)
             self.version = f"v{version_num}"
-            print(f"Using output directory: {self.output_dir} (version: {self.version})")
+            print(f"Created versioned output directory: {self.output_dir} (version: {self.version})")
         else:
-            # Default output dir if no model_id
-            if output_dir:
-                self.output_dir = output_dir
-            else:
-                self.output_dir = os.path.join(os.path.dirname(model_dir), f"predictions_{self.timestamp}")
+            # Default output dir if no model_id or output_dir
+            self.output_dir = os.path.join(os.path.dirname(model_dir), f"predictions_{self.timestamp}")
             self.version = "v1"
-            print(f"Using custom output directory: {self.output_dir}")
+            print(f"Using default output directory: {self.output_dir}")
         
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)

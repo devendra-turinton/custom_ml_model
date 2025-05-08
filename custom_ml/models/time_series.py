@@ -197,8 +197,6 @@ class TimeSeriesPipeline(BasePipeline):
             logger.info(f"Set seasonal period to {self.seasonal_period} based on frequency '{self.freq}'")
             validation_metadata['seasonal_period_inferred'] = self.seasonal_period
         
-        # Update metadata
-        self.metadata['data']['validation'] = validation_metadata
         
         logger.info("Data validation complete")
         return True

@@ -1,6 +1,7 @@
 import argparse
 import os
 import json
+import pickle
 import shutil
 import yaml
 import logging
@@ -11,10 +12,6 @@ from datetime import datetime
 from typing import Callable, Dict,Optional, Any,Tuple
 from sklearn.base import BaseEstimator, TransformerMixin
 
-from models.classification import ClassificationPipeline
-from models.cluster import ClusteringPipeline
-from models.regression import RegressionPipeline
-from models.time_series import TimeSeriesPipeline
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -24,16 +21,23 @@ logging.getLogger(__name__).setLevel(logging.DEBUG)
 # Configuration Loading Utilities
 #########################################
 
-def load_config(config_path: str) -> Dict[str, Any]: 
+def load_config(config_path: str = None) -> Dict[str, Any]:
     """
-    Load configuration from YAML file.
+    Load configuration from YAML file or return pre-loaded config.
     
     Args:
-        config_path: Path to the YAML configuration file
+        config_path: Path to the YAML configuration file (optional)
         
     Returns:
         Dictionary containing the configuration
     """
+    from ml_api.config import CONFIG, CONFIG_PATH
+    
+    # If no path specified or path is the same as main config, return pre-loaded config
+    if config_path is None or config_path == CONFIG_PATH:
+        return CONFIG
+        
+    # Otherwise, load from the specified path
     logger.debug(f"Loading configuration from: {config_path}")
     start_time = datetime.now()
     
@@ -53,18 +57,6 @@ def load_config(config_path: str) -> Dict[str, Any]:
         
         logger.info(f"Configuration loaded from {config_path} ({config_size/1024:.1f} KB) in {load_time:.3f} seconds")
         logger.debug(f"Configuration has {len(top_level_keys)} top-level sections: {top_level_keys}")
-        
-        # Log important configuration sections if they exist
-        if 'common' in config:
-            common_keys = list(config['common'].keys())
-            logger.debug(f"Common configuration contains: {common_keys}")
-        
-        # Log problem-specific configurations
-        problem_types = ['regression', 'classification', 'time_series', 'clustering']
-        for problem in problem_types:
-            if problem in config:
-                problem_keys = list(config[problem].keys())
-                logger.debug(f"{problem.capitalize()} configuration contains: {problem_keys}")
         
         return config
     except yaml.YAMLError as e:
@@ -1457,18 +1449,18 @@ def run_default_ml_pipeline(
     df: pd.DataFrame,
     target: str,
     model_id: str,
-    output_dir: str,
+    output_dir: str,  # This should now be the versioned directory
     config: dict,
     **kwargs
 ) -> tuple:
     """
-    Default ML pipeline implementation - refactored to match custom flow structure.
+    Default ML pipeline implementation with direct output to version directory.
     
     Args:
         df: Input DataFrame
         target: Target column name
         model_id: Model identifier
-        output_dir: Output directory path
+        output_dir: Versioned output directory path
         config: Configuration dictionary
         **kwargs: Additional arguments
         
@@ -1478,6 +1470,7 @@ def run_default_ml_pipeline(
     import os
     import logging
     import pandas as pd
+    import numpy as np
     from datetime import datetime
     import pickle
     import json
@@ -1494,24 +1487,17 @@ def run_default_ml_pipeline(
     data_path = kwargs.get('data_path', None)
     config_path = kwargs.get('config_path', None)
     
-    # Create version directory
-    versioned_output_dir, version_num = get_next_version_dir(
-        output_dir, model_id,
-        max_versions=config.get('common', {}).get('output', {}).get('max_versions', 5)
-    )
     
-    # Ensure versioned directory exists
-    os.makedirs(versioned_output_dir, exist_ok=True)
-    logger.info(f"Using versioned output directory: {versioned_output_dir} (v{version_num})")
+    logger.info(f"Using versioned output directory: {output_dir}")
     
-    # Log column data types
-    dtypes_summary = df.dtypes.value_counts().to_dict()
-    logger.debug(f"DataFrame column types: {dtypes_summary}")
+    # Define final output paths directly in the versioned directory
+    model_path = os.path.join(output_dir, f"{model_id}.pkl")
+    metadata_path = os.path.join(output_dir, "metadata.json")
     
     # Initialize metadata
     metadata = initialize_metadata()
     metadata["model_id"] = model_id
-    metadata["version"] = f"v{version_num}"
+    metadata["version"] = version
     metadata["data"] = {
         "shape": df.shape,
         "columns": list(df.columns),
@@ -1535,26 +1521,26 @@ def run_default_ml_pipeline(
             'data_path': data_path,
             'target': target,
             'model_id': model_id,
-            'output_dir': versioned_output_dir,
+            'output_dir': output_dir,  # Direct to versioned directory
             'config_path': config_path
         }
         
         logger.info(f"Initializing {problem_type} pipeline")
         
         if problem_type == 'regression':
-            from models.regression import RegressionPipeline
+            from custom_ml.models.regression import RegressionPipeline
             pipeline = RegressionPipeline(**pipeline_args)
             
         elif problem_type == 'classification':
-            from models.classification import ClassificationPipeline
+            from custom_ml.models.classification import ClassificationPipeline
             pipeline = ClassificationPipeline(**pipeline_args)
             
         elif problem_type == 'clustering':
-            from models.cluster import ClusteringPipeline
+            from custom_ml.models.cluster import ClusteringPipeline
             pipeline = ClusteringPipeline(**pipeline_args)
             
         elif problem_type == 'time_series':
-            from models.time_series import TimeSeriesPipeline
+            from custom_ml.models.time_series import TimeSeriesPipeline
             pipeline = TimeSeriesPipeline(
                 **pipeline_args,
                 time_col=time_col,
@@ -1570,17 +1556,18 @@ def run_default_ml_pipeline(
         logger.info(f"Running {problem_type} pipeline...")
         best_model, results = pipeline.run_pipeline()
         
-        # Ensure model file path exists
-        model_path = os.path.join(versioned_output_dir, f"{model_id}.pkl")
-        metadata_path = os.path.join(versioned_output_dir, "metadata.json")
+        # Update metadata with pipeline metadata
+        if hasattr(pipeline, 'metadata'):
+            # Combine with our metadata
+            for key, value in pipeline.metadata.items():
+                metadata[key] = value
         
-        # If run_pipeline didn't save the model for some reason, save it manually
-        if not os.path.exists(model_path) and best_model is not None:
+        # Save the model directly to the version directory
+        if best_model is not None:
             logger.info(f"Saving best model to {model_path}")
             try:
-                # Check if preprocessor is available
+                # Create a complete pipeline with preprocessor if available
                 if hasattr(pipeline, 'preprocessor') and pipeline.preprocessor is not None:
-                    # Create a complete pipeline
                     from sklearn.pipeline import Pipeline as SklearnPipeline
                     complete_model = SklearnPipeline([
                         ('preprocessor', pipeline.preprocessor),
@@ -1598,116 +1585,116 @@ def run_default_ml_pipeline(
             except Exception as e:
                 logger.error(f"Error saving model: {str(e)}")
         
-        # If metadata file wasn't saved, save it manually
-        if not os.path.exists(metadata_path):
-            logger.info(f"Saving metadata to {metadata_path}")
-            try:
-                # Add runtime information
-                metadata["runtime_seconds"] = (datetime.now() - start_time).total_seconds()
-                metadata["status"] = "completed"
-                metadata["end_time"] = datetime.now().isoformat()
+        # Update paths in metadata
+        if 'best_model' in metadata and 'filename' in metadata['best_model']:
+            metadata['best_model']['filename'] = model_path
+        
+        # Add runtime information
+        metadata["runtime_seconds"] = (datetime.now() - start_time).total_seconds()
+        metadata["status"] = "completed"
+        metadata["output_dir"] = output_dir
+        metadata["end_time"] = datetime.now().isoformat()
+        
+        # Save metadata directly to the version directory
+        with open(metadata_path, 'w') as f:
+            class NpEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if isinstance(obj, np.integer):
+                        return int(obj)
+                    if isinstance(obj, np.floating):
+                        return float(obj)
+                    if isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    if isinstance(obj, datetime):
+                        return obj.isoformat()
+                    return super(NpEncoder, self).default(obj)
                 
-                # Add model information if available
-                if pipeline.metadata.get('best_model'):
-                    metadata['best_model'] = pipeline.metadata['best_model']
-                elif hasattr(pipeline, 'best_model') and pipeline.best_model is not None:
-                    metadata['best_model'] = {
-                        "name": "best_model",
-                        "model_type": str(type(pipeline.best_model))
-                    }
-                
-                # Add results information if available
-                if results is not None and not results.empty:
-                    metadata['evaluation'] = {
-                        "results_summary": results.to_dict(orient='records')[:5]  # Include first 5 models
-                    }
-                
-                with open(metadata_path, 'w') as f:
-                    # Handle objects that can't be serialized to JSON
-                    class NpEncoder(json.JSONEncoder):
-                        def default(self, obj):
-                            import numpy as np
-                            if isinstance(obj, np.integer):
-                                return int(obj)
-                            if isinstance(obj, np.floating):
-                                return float(obj)
-                            if isinstance(obj, np.ndarray):
-                                return obj.tolist()
-                            if isinstance(obj, datetime):
-                                return obj.isoformat()
-                            return super(NpEncoder, self).default(obj)
-                    
-                    json.dump(metadata, f, indent=2, cls=NpEncoder)
-                
-                logger.info(f"Metadata saved to {metadata_path}")
-            except Exception as e:
-                logger.error(f"Error saving metadata: {str(e)}")
+            json.dump(metadata, f, indent=2, cls=NpEncoder)
+        
+        logger.info(f"Metadata saved to {metadata_path}")
         
         total_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Default ML pipeline completed in {total_time:.2f} seconds")
         
+        # At the end, before returning, add validation:
+        logger.info("Validating metadata before completing pipeline")
+        metadata_path = os.path.join(output_dir, "metadata.json")
+        
         return best_model, results, model_path, metadata_path
         
     except Exception as e:
+            
         total_time = (datetime.now() - start_time).total_seconds()
         logger.error(f"Error in default pipeline after {total_time:.2f} seconds: {str(e)}", exc_info=True)
         
-        # Save error metadata
-        try:
-            error_metadata = {
-                "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-                "model_id": model_id,
-                "version": f"v{version_num}",
-                "status": "failed",
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "start_time": start_time.isoformat(),
-                "end_time": datetime.now().isoformat(),
-                "runtime_seconds": total_time
-            }
-            
-            error_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
-            
-            with open(error_metadata_path, 'w') as f:
-                json.dump(error_metadata, f, indent=2)
-            
-            logger.info(f"Error metadata saved to {error_metadata_path}")
-            
-            return None, None, None, error_metadata_path
-        except Exception as err:
-            logger.error(f"Failed to save error metadata: {str(err)}")
-            raise
-            
         raise
 
-def run_custom_ml_flow(args, config, df, input_dir, output_dir):
+def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
     """
-    Run the custom ML pipeline flow, handling versioning and directory structure.
+    Run the custom ML pipeline flow, directly using the version directory.
 
     Args:
         args: Command line arguments
         config: Configuration dictionary
         df: Input DataFrame
-        input_dir: Input directory for data
-        output_dir: Base output directory
+        input_dir: Input directory containing data files
+        version_dir: Versioned output directory for this run
+        model_id: Model identifier
 
     Returns:
         tuple: (best_model, results, model_path, metadata_path)
     """
     logger.info("Running custom ML flow...")
     start_time = datetime.now()
+
+        
+    # Output file paths
+    model_path = os.path.join(version_dir, f"{model_id}.pkl")
+    metadata_path = os.path.join(version_dir, "metadata.json")
     
     # Log input parameters
     logger.debug(f"Custom ML flow parameters - model_id: {args.model_id}")
     logger.debug(f"DataFrame shape: {df.shape} - {df.shape[0]:,} rows, {df.shape[1]:,} columns")
     logger.debug(f"Input directory: {input_dir}")
-    logger.debug(f"Output directory: {output_dir}")
+    logger.debug(f"Output directory: {version_dir}")
     
     # Log custom configuration
     custom_config = config.get('common', {}).get('custom_ml_model', {})
     function_path = custom_config.get('function_path', '')
     function_name = custom_config.get('function_name', 'run_custom_pipeline')
     
+    # Try to get the latest version of the custom code
+    if function_path:
+        try:
+            # Update path to latest version if model_id matches
+            path_parts = function_path.split('/')
+            if 'input' in path_parts and any(p.startswith('v') for p in path_parts):
+                for i, part in enumerate(path_parts):
+                    if part == 'input' and i+1 < len(path_parts):
+                        possible_model_id = path_parts[i+1]
+                        # If model_id matches args.model_id, use it
+                        if possible_model_id == args.model_id:
+                            logger.debug(f"Extracted model_id from path: {possible_model_id}")
+                            # Extract base_path (everything up to input/model_id)
+                            base_path_parts = path_parts[:path_parts.index('input')+2]
+                            base_path = '/'.join(base_path_parts)
+                            # Get latest version
+                            latest_path = get_latest_custom_code_path(args.model_id, base_path)
+                            if latest_path:
+                                function_path = latest_path
+                                logger.info(f"Using latest versioned custom code: {function_path}")
+                            break
+        except Exception as e:
+            logger.warning(f"Error parsing function path for versioning: {str(e)}")
+    
+    # If no path or couldn't extract version, try to get the latest version by model_id
+    if not function_path or not os.path.exists(function_path):
+        logger.info(f"Searching for latest custom code version for model_id: {args.model_id}")
+        latest_path = get_latest_custom_code_path(args.model_id)
+        if latest_path:
+            function_path = latest_path
+            logger.info(f"Found latest versioned custom code: {function_path}")
+
     logger.debug(f"Custom function configuration:")
     logger.debug(f"  - Function path: {function_path}")
     logger.debug(f"  - Function name: {function_name}")
@@ -1722,7 +1709,7 @@ def run_custom_ml_flow(args, config, df, input_dir, output_dir):
         raise ValueError(error_msg)
 
     # Load the custom function
-    logger.debug(f"Attempting to load custom function '{function_name}' from {function_path}")
+    logger.debug(f"Loading custom function '{function_name}' from {function_path}")
     load_start = datetime.now()
     
     custom_function = load_custom_function(function_path, function_name)
@@ -1735,45 +1722,20 @@ def run_custom_ml_flow(args, config, df, input_dir, output_dir):
     
     logger.info(f"Successfully loaded custom function in {load_time:.2f} seconds")
 
-    # Create versioned output directory using existing utility
-    dir_start = datetime.now()
-    versioned_output_dir, version_num = get_next_version_dir(
-        output_dir, args.model_id,
-        max_versions=config.get('common', {}).get('output', {}).get('max_versions', 5)
-    )
-    dir_time = (datetime.now() - dir_start).total_seconds()
-
-    # Ensure versioned directory exists
-    os.makedirs(versioned_output_dir, exist_ok=True)
-    logger.info(f"Created versioned output directory: {versioned_output_dir} (v{version_num}) in {dir_time:.2f} seconds")
-
-    # Create a temporary working directory for the custom function
-    temp_dir = os.path.join(output_dir, "temp_custom_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
-    os.makedirs(temp_dir, exist_ok=True)
-    logger.debug(f"Created temporary working directory: {temp_dir}")
-
-    # Prepare arguments for custom function
+    # Prepare arguments for custom function - now with direct paths
     custom_args = {
         'df': df,
         'target': args.target,
         'model_id': args.model_id,
-        'output_dir': temp_dir,
+        'output_dir': version_dir,  # Pass the version directory directly
         'config': config,
         'time_col': args.time_col,
-        'version': version_num,
+        'version': args.version,
         'forecast_horizon': getattr(args, 'forecast_horizon', None)
     }
     
     logger.debug(f"Prepared arguments for custom function: {custom_args.keys()}")
     
-    # Try to log function signature for debugging
-    try:
-        import inspect
-        signature = inspect.signature(custom_function)
-        logger.debug(f"Custom function signature: {signature}")
-    except Exception as e:
-        logger.debug(f"Could not inspect custom function signature: {str(e)}")
-
     try:
         # Call the custom function
         logger.info(f"Calling custom function '{function_name}'")
@@ -1803,52 +1765,30 @@ def run_custom_ml_flow(args, config, df, input_dir, output_dir):
         except ImportError:
             pass
 
-        # Check return type and unpack appropriately
+        # Check return type and unpack
         if isinstance(result, tuple) and len(result) >= 2:
             logger.debug(f"Custom function returned a tuple with {len(result)} elements")
             best_model, results = result[0], result[1]
 
-            # Extract paths if provided
-            temp_model_path = result[2] if len(result) > 2 else None
-            temp_metadata_path = result[3] if len(result) > 3 else None
+            # Get paths if provided, otherwise use defaults
+            custom_model_path = result[2] if len(result) > 2 and result[2] else model_path
+            custom_metadata_path = result[3] if len(result) > 3 and result[3] else metadata_path
             
-            logger.debug(f"Extracted from result - model path: {temp_model_path}, metadata path: {temp_metadata_path}")
-
-            # Copy model file to versioned directory
-            if temp_model_path and os.path.exists(temp_model_path):
-                model_filename = os.path.basename(temp_model_path)
-                final_model_path = os.path.join(versioned_output_dir, model_filename)
-                os.makedirs(os.path.dirname(final_model_path), exist_ok=True)
-
-                logger.debug(f"Copying model file from {temp_model_path} to {final_model_path}")
-                copy_start = datetime.now()
-                
-                model_size_mb = os.path.getsize(temp_model_path) / (1024 * 1024)
-                shutil.copy2(temp_model_path, final_model_path)
-                
-                copy_time = (datetime.now() - copy_start).total_seconds()
-                logger.info(f"Copied model from {temp_model_path} to {final_model_path} ({model_size_mb:.2f} MB) in {copy_time:.2f} seconds")
-            else:
-                if temp_model_path:
-                    logger.warning(f"Model file not found at {temp_model_path}")
-                else:
-                    logger.warning("No model path was returned by the custom function")
-                    
-                final_model_path = os.path.join(versioned_output_dir, f"{args.model_id}.pkl")
-                logger.warning(f"No model file found, using default path: {final_model_path}")
-
-            # Copy metadata file to versioned directory
-            if temp_metadata_path and os.path.exists(temp_metadata_path):
+            # If custom paths are different from our default paths, update them
+            if custom_model_path != model_path and os.path.exists(custom_model_path):
+                model_path = custom_model_path
+            
+            if custom_metadata_path != metadata_path and os.path.exists(custom_metadata_path):
+                metadata_path = custom_metadata_path
+            
+            logger.debug(f"Final model path: {model_path}")
+            logger.debug(f"Final metadata path: {metadata_path}")
+            
+            # Update metadata if it exists
+            if os.path.exists(metadata_path):
                 try:
-                    logger.debug(f"Processing metadata from {temp_metadata_path}")
-                    process_start = datetime.now()
-                    
-                    with open(temp_metadata_path, 'r') as f:
+                    with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
-
-                    # Update version information
-                    metadata['version'] = f"v{version_num}"
-                    metadata['output_dir'] = versioned_output_dir
                     
                     # Add timestamp if not present
                     if 'timestamp' not in metadata:
@@ -1857,97 +1797,111 @@ def run_custom_ml_flow(args, config, df, input_dir, output_dir):
                     # Add runtime information
                     if 'runtime_seconds' not in metadata:
                         metadata['runtime_seconds'] = fn_time
-
-                    final_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
-                    os.makedirs(os.path.dirname(final_metadata_path), exist_ok=True)
-
-                    with open(final_metadata_path, 'w') as f:
+                        
+                    # Write back updated metadata
+                    with open(metadata_path, 'w') as f:
                         json.dump(metadata, f, indent=2)
-                    
-                    process_time = (datetime.now() - process_start).total_seconds()
-                    metadata_size_kb = os.path.getsize(final_metadata_path) / 1024
-                    logger.info(f"Updated metadata and saved to {final_metadata_path} ({metadata_size_kb:.2f} KB) in {process_time:.2f} seconds")
-                    
-                    # Log metadata contents summary
-                    try:
-                        keys = list(metadata.keys())
-                        if 'best_model' in metadata:
-                            best_model_info = metadata['best_model']
-                            best_model_name = best_model_info.get('name', 'Unknown')
-                            metrics = {k: v for k, v in best_model_info.items() if 'metric' in k.lower()}
-                            logger.debug(f"Metadata contains best model: {best_model_name} with metrics: {metrics}")
-                    except Exception as e:
-                        logger.debug(f"Could not summarize metadata contents: {str(e)}")
-                        
                 except Exception as e:
-                    logger.error(f"Error processing metadata: {str(e)}", exc_info=True)
-                    final_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
-            else:
-                if temp_metadata_path:
-                    logger.warning(f"Metadata file not found at {temp_metadata_path}")
-                else:
-                    logger.warning("No metadata path was returned by the custom function")
-                    
-                final_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
-                logger.warning(f"No metadata file found, using default path: {final_metadata_path}")
-
-            # Copy any log files if present
-            logger.debug(f"Checking for log files in {temp_dir}")
-            log_start = datetime.now()
-            log_files = []
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    if file.endswith('.log'):
-                        src = os.path.join(root, file)
-                        rel_path = os.path.relpath(src, temp_dir)
-                        dst = os.path.join(versioned_output_dir, rel_path)
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        
-                        file_size_kb = os.path.getsize(src) / 1024
-                        logger.debug(f"Copying log file: {src} ({file_size_kb:.2f} KB) to {dst}")
-                        
-                        shutil.copy2(src, dst)
-                        log_files.append(dst)
-
-            log_copy_time = (datetime.now() - log_start).total_seconds()
-            if log_files:
-                logger.info(f"Copied {len(log_files)} log files to versioned directory in {log_copy_time:.2f} seconds")
-            else:
-                logger.warning("No log files found in the temporary directory")
-
-            # Clean up temporary directory
-            cleanup_start = datetime.now()
-            try:
-                logger.debug(f"Removing temporary directory: {temp_dir}")
-                shutil.rmtree(temp_dir)
-                cleanup_time = (datetime.now() - cleanup_start).total_seconds()
-                logger.info(f"Removed temporary directory: {temp_dir} in {cleanup_time:.2f} seconds")
-            except Exception as e:
-                logger.warning(f"Failed to remove temporary directory: {str(e)}")
-            
-            total_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Custom ML flow completed in {total_time:.2f} seconds")
-            
-            return best_model, results, final_model_path, final_metadata_path
+                    logger.warning(f"Error updating metadata: {str(e)}")
         else:
             logger.warning(f"Custom function did not return expected tuple format. Got: {type(result)}")
             
             # Try to extract useful information from the result
             if result is not None:
-                logger.debug(f"Result type: {type(result)}")
+                best_model = result
+                results = None
                 
-                if hasattr(result, '__dict__'):
-                    logger.debug(f"Result attributes: {dir(result)}")
+                # Save model if not already saved
+                if not os.path.exists(model_path) and best_model is not None:
+                    try:
+                        with open(model_path, 'wb') as f:
+                            pickle.dump(best_model, f)
+                        logger.info(f"Saved model to {model_path}")
+                    except Exception as e:
+                        logger.error(f"Error saving model: {str(e)}")
+                
+                # Create basic metadata if not present
+                if not os.path.exists(metadata_path):
+                    metadata = {
+                        'model_id': model_id,
+                        'timestamp': datetime.now().isoformat(),
+                        'runtime_seconds': fn_time,
+                        'version': args.version,
+                        'status': 'completed',
+                        'custom_ml_model': True
+                    }
+                    
+                    try:
+                        with open(metadata_path, 'w') as f:
+                            json.dump(metadata, f, indent=2)
+                        logger.info(f"Created basic metadata at {metadata_path}")
+                    except Exception as e:
+                        logger.error(f"Error creating metadata: {str(e)}")
+        
+        if isinstance(result, tuple) and len(result) >= 4:
+            best_model, results, model_path, metadata_path = result
+            logger.info(f"Custom function completed successfully")
+            logger.info(f"Model saved to: {model_path}")
+            logger.info(f"Metadata saved to: {metadata_path}")
+        else:
+            logger.error(f"Invalid result from custom function. Expected a tuple with at least 4 items.")
+            raise ValueError(f"Invalid result from custom function. Expected a tuple with at least 4 items.")
+        
+        # Validate the metadata from the custom flow
+        try:
+            logger.info(f"Validating custom model metadata: {metadata_path}")
             
-            final_model_path = os.path.join(versioned_output_dir, f"{args.model_id}.pkl")
-            final_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
+            # Load the metadata
+            with open(metadata_path, 'r') as f:
+                metadata_content = json.load(f)
             
-            total_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Custom ML flow completed with unexpected return format in {total_time:.2f} seconds")
+            # Create validator and validate
+            validator = MetadataValidator(strict_mode=False)
+            is_valid, messages = validator.validate_metadata(metadata_content)
             
-            return result, None, final_model_path, final_metadata_path
+            # Update metadata with validation results
+            validation_result = {
+                'metadata_validated': True,
+                'validation_timestamp': datetime.now().isoformat(),
+                'validation_passed': is_valid,
+                'validation_issues': messages
+            }
+            
+            metadata_content['validation'] = validation_result
+            
+            # Save updated metadata
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata_content, f, indent=2)
+            
+            # Log validation results
+            if is_valid:
+                logger.info("✅ Custom model metadata validation PASSED")
+                print("\n✅ Metadata validation PASSED - Model is ready for testing\n")
+            else:
+                logger.warning(f"⚠️ Custom model metadata validation found {len(messages)} issues")
+                for msg in messages:
+                    logger.warning(f"  - {msg}")
+                
+                # Print warning to console for visibility
+                print(f"\n⚠️ WARNING: Custom model metadata has {len(messages)} validation issues")
+                print("The model may not work correctly with the testing pipeline.")
+                print(f"See validation issues in metadata: {metadata_path}\n")
+                
+        except Exception as e:
+            logger.warning(f"Error during metadata validation (non-fatal): {str(e)}", exc_info=True)
+        
+        
+        total_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Custom ML flow completed in {total_time:.2f} seconds")
+
+
+
+        
+        return best_model, results, model_path, metadata_path
 
     except Exception as e:
+        
+            
         error_time = (datetime.now() - start_time).total_seconds()
         logger.error(f"Error in custom ML flow after {error_time:.2f} seconds: {str(e)}", exc_info=True)
         
@@ -1958,49 +1912,7 @@ def run_custom_ml_flow(args, config, df, input_dir, output_dir):
             logger.debug(f"Error traceback:\n{err_trace}")
         except Exception:
             pass
-
-        error_metadata = {
-            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "model_id": args.model_id,
-            "version": f"v{version_num}",
-            "status": "failed",
-            "error": str(e),
-            "error_type": type(e).__name__,
-            "start_time": start_time.isoformat(),
-            "end_time": datetime.now().isoformat(),
-            "runtime_seconds": error_time
-        }
-
-        # Add context to error metadata
-        error_metadata["context"] = {
-            "function_path": function_path,
-            "function_name": function_name,
-            "input_dir": input_dir,
-            "output_dir": output_dir,
-            "temp_dir": temp_dir,
-            "df_shape": list(df.shape) if 'df' in locals() else None,
-        }
-
-        error_metadata_path = os.path.join(versioned_output_dir, "metadata.json")
-        os.makedirs(os.path.dirname(error_metadata_path), exist_ok=True)
-
-        logger.debug(f"Saving error metadata to {error_metadata_path}")
-        try:
-            with open(error_metadata_path, 'w') as f:
-                json.dump(error_metadata, f, indent=2)
-            logger.info(f"Error metadata saved to {error_metadata_path}")
-        except Exception as metadata_error:
-            logger.error(f"Could not save error metadata: {str(metadata_error)}")
-
-        # Try to clean up temporary directory
-        try:
-            if 'temp_dir' in locals() and os.path.exists(temp_dir):
-                logger.debug(f"Cleaning up temporary directory after error: {temp_dir}")
-                shutil.rmtree(temp_dir)
-                logger.debug(f"Removed temporary directory: {temp_dir}")
-        except Exception as cleanup_error:
-            logger.warning(f"Failed to clean up temporary directory: {str(cleanup_error)}")
-
+        
         logger.error(f"Custom ML flow failed after {error_time:.2f} seconds")
         raise
 
@@ -2057,7 +1969,7 @@ def prepare_directories(model_id, version):
         tuple: (input_dir, output_dir, data_path)
     """
     # Base directories
-    base_dir = os.path.join("custom_ml_data")
+    base_dir = os.path.join("data")
     input_dir = os.path.join(base_dir, "training", "input", model_id, version)
     output_dir = os.path.join(base_dir, "training", "output", model_id)
     
@@ -2251,32 +2163,101 @@ def print_pipeline_results(model_path, metadata_path, model_id, output_dir, best
         
     logger.info(f"\nPipeline completed successfully in {total_time:.2f} seconds!")
 
-def create_error_report(model_id, output_dir, error, start_time, total_time):
-    """Create and save an error report."""
+def get_latest_custom_code_path(model_id, base_path=None):
+    """
+    Get the path to the latest version of custom_code.py for a given model_id.
+    
+    Args:
+        model_id: Model identifier
+        base_path: Base path for custom code (defaults to standard location)
+        
+    Returns:
+        str: Path to the latest version of custom_code.py
+    """
+    import os
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Define default base path if not provided
+    if base_path is None:
+        base_path = os.path.join("custom_ml_data", "custom_code", "input", model_id)
+    
+    logger.debug(f"Searching for custom code versions in: {base_path}")
+    
+    # Check if the directory exists
+    if not os.path.exists(base_path):
+        logger.warning(f"Custom code base path does not exist: {base_path}")
+        # Try alternate paths
+        alt_paths = [
+            os.path.join("/home/devendra_yadav/custom_ml_model/custom_ml_data/custom_code/input", model_id),
+            os.path.join("custom_code", "input", model_id),
+            os.path.join("input", model_id)
+        ]
+        
+        for path in alt_paths:
+            if os.path.exists(path):
+                base_path = path
+                logger.info(f"Found alternate custom code path: {base_path}")
+                break
+        else:
+            logger.error(f"No custom code directory found for model_id: {model_id}")
+            return None
+    
+    # Get all version directories (they should be named v1, v2, etc.)
+    version_dirs = []
     try:
-        error_metadata = {
-            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            "model_id": model_id,
-            "status": "failed",
-            "error": str(error),
-            "error_type": type(error).__name__,
-            "start_time": start_time.isoformat(),
-            "end_time": datetime.now().isoformat(),
-            "runtime_seconds": total_time,
-            "traceback": traceback.format_exc()
-        }
-        
-        # Create error output directory
-        error_dir = os.path.join(output_dir, "error_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
-        os.makedirs(error_dir, exist_ok=True)
-        
-        error_path = os.path.join(error_dir, "error_metadata.json")
-        with open(error_path, 'w') as f:
-            json.dump(error_metadata, f, indent=2)
+        for item in os.listdir(base_path):
+            full_path = os.path.join(base_path, item)
             
-        logger.info(f"Error report saved to: {error_path}")
-    except Exception as err_ex:
-        logger.debug(f"Could not save error report: {str(err_ex)}")
+            if os.path.isdir(full_path) and item.startswith('v'):
+                try:
+                    # Extract version number from directory name (v1, v2, etc.)
+                    version_num = int(item[1:])
+                    version_dirs.append((item, version_num, full_path))
+                    logger.debug(f"Found version directory: {item} (version {version_num})")
+                except ValueError:
+                    # Skip directories that don't follow the vN pattern
+                    logger.debug(f"Skipping directory that doesn't match version pattern: {item}")
+                    continue
+    except Exception as e:
+        logger.error(f"Error scanning directory {base_path}: {str(e)}")
+        return None
+    
+    # If no version directories found
+    if not version_dirs:
+        logger.warning(f"No version directories found for model_id: {model_id}")
+        
+        # Check for custom_code.py directly in the base path as fallback
+        fallback_path = os.path.join(base_path, "custom_code.py")
+        if os.path.exists(fallback_path):
+            logger.info(f"Found custom code at fallback location: {fallback_path}")
+            return fallback_path
+        
+        return None
+    
+    # Sort by version number to find the highest
+    version_dirs.sort(key=lambda x: x[1], reverse=True)
+    latest_version = version_dirs[0]
+    logger.info(f"Latest custom code version: {latest_version[0]} (version {latest_version[1]})")
+    
+    # Check for custom_code.py in the latest version directory
+    custom_code_path = os.path.join(latest_version[2], "custom_code.py")
+    if os.path.exists(custom_code_path):
+        logger.info(f"Found custom code at: {custom_code_path}")
+        return custom_code_path
+    else:
+        logger.warning(f"custom_code.py not found in latest version directory: {latest_version[2]}")
+        
+        # Try to find it in other version directories in descending order
+        for _, _, dir_path in version_dirs[1:]:
+            alt_path = os.path.join(dir_path, "custom_code.py")
+            if os.path.exists(alt_path):
+                logger.info(f"Found custom code in alternate version: {alt_path}")
+                return alt_path
+        
+        logger.error(f"No custom_code.py found in any version directory for model_id: {model_id}")
+        return None
 
 def get_next_version_dir(base_output_dir: str, model_id: str, max_versions: int = 5) -> Tuple[str, int]:
     """

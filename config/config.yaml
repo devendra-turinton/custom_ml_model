@@ -10,7 +10,7 @@ common:
 
   custom_ml_model:
     enabled: false  # Toggle for custom model flow
-    function_path: "/home/devendra_yadav/custom_ml_model/custom_ml_data/custom_code/input/123456789/v1/custom_code.py"  # Path to Python module with custom function
+    function_path: "/home/devendra_yadav/custom_ml_model/data/custom_code/input/123456789/v1/custom_code.py"  # Path to Python module with custom function
     function_name: "run_custom_pipeline"  # Name of function to call
   
   # Output settings
@@ -126,7 +126,6 @@ regression:
     store_predictions: true  # Whether to store test set predictions
     max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
 
-
 # Classification specific settings
 classification:  
   class_handling:
@@ -190,7 +189,8 @@ classification:
         parameters:
           C: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
           solver: ["lbfgs", "liblinear", "saga"]
-          penalty: ["l1", "l2", "elasticnet", null]
+          penalty: ["l1", "l2", "elasticnet"]
+          max_iter: [1000]
       
       knn:
         enabled: true
@@ -210,7 +210,6 @@ classification:
     # Prediction storage settings
     store_predictions: true  # Whether to store test set predictions
     max_stored_predictions: 1000  # Maximum number of predictions to include in metadata
-
 
 # Clustering specific settings
 clustering:
