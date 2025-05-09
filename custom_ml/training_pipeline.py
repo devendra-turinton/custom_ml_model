@@ -81,7 +81,7 @@ class BasePipeline(ABC):
 
         
         # With this code:
-        log_file = os.path.join(self.output_dir, "pipeline.log")  # Use a fixed name without timestamp
+        log_file = os.path.join(self.output_dir, "training.log")  # Use a fixed name without timestamp
         # Check if a handler for this log file already exists
         log_exists = False
         root_logger = logging.getLogger()

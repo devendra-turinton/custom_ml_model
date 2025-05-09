@@ -232,21 +232,31 @@ def validate_custom_pipeline_output(
         log_files = [f for f in os.listdir(output_dir) if f.endswith('.log')]
         
         if log_files:
-            logger.debug(f"Found {len(log_files)} log files in output directory")
-            latest_log = sorted([os.path.join(output_dir, f) for f in log_files], 
-                               key=os.path.getmtime, reverse=True)[0]
-            
             validation_results["file_validation"]["log_file_exists"] = True
             
             # Check if not empty
+            latest_log = sorted([os.path.join(output_dir, f) for f in log_files], 
+                            key=os.path.getmtime, reverse=True)[0]
             file_size = os.path.getsize(latest_log)
             validation_results["file_validation"]["log_file_not_empty"] = file_size > 0
             
             if not validation_results["file_validation"]["log_file_not_empty"]:
                 logger.warning(f"Log file at {latest_log} is empty (0 bytes)")
         else:
-            logger.warning("No log files found in output directory")
-    
+            validation_results["file_validation"]["log_file_exists"] = False
+            logger.error(f"No log files found in output directory: {output_dir}")
+            
+            # Create a minimal fallback log file
+            try:
+                fallback_log = os.path.join(output_dir, "validation_fallback.log")
+                with open(fallback_log, 'w') as f:
+                    f.write(f"Validation fallback log created at {datetime.now().isoformat()}\n")
+                    f.write(f"No log files were found during validation.\n")
+                    f.write("This may indicate that the custom pipeline didn't set up logging properly.\n")
+                logger.info(f"Created fallback log file: {fallback_log}")
+            except Exception as e:
+                logger.error(f"Error creating fallback log: {str(e)}")
+
     except Exception as e:
         logger.error(f"Error validating output files: {str(e)}")
     

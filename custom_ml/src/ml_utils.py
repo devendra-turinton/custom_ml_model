@@ -1645,10 +1645,13 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
     Returns:
         tuple: (best_model, results, model_path, metadata_path)
     """
+    logger.debug(f"Custom ML flow will use existing log file (training.log)")
     logger.info("Running custom ML flow...")
     start_time = datetime.now()
 
-        
+    # Set up explicit logging to version directory
+    log_file = os.path.join(version_dir, ".log")
+
     # Output file paths
     model_path = os.path.join(version_dir, f"{model_id}.pkl")
     metadata_path = os.path.join(version_dir, "metadata.json")
@@ -1894,6 +1897,22 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
             logger.info(f"Custom function completed successfully")
             logger.info(f"Model saved to: {model_path}")
             logger.info(f"Metadata saved to: {metadata_path}")
+
+            if os.path.exists(metadata_path):
+                try:
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Update the status to completed
+                    metadata['status'] = 'completed'
+                    
+                    # Write back updated metadata
+                    with open(metadata_path, 'w') as f:
+                        json.dump(metadata, f, indent=2)
+                    
+                    logger.info("Updated metadata status to 'completed'")
+                except Exception as e:
+                    logger.warning(f"Could not update metadata status: {str(e)}")
         else:
             logger.error(f"Invalid result from custom function. Expected a tuple with at least 4 items.")
             raise ValueError(f"Invalid result from custom function. Expected a tuple with at least 4 items.")

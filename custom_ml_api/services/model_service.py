@@ -86,6 +86,17 @@ class ModelTrainingService:
             logger.info(f"Using output directory: {version_dir} (v{version_num})")
             logger.info(f"Using target column: {target}")
             
+            # Set up explicit log file for this training run
+            log_file = os.path.join(version_dir, "training.log")
+            log_handler = None
+            try:
+                log_handler = logging.FileHandler(log_file)
+                log_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+                logging.getLogger().addHandler(log_handler)
+                logger.info(f"Training log file created at: {log_file}")
+            except Exception as e:
+                logger.warning(f"Could not create log file: {str(e)}")
+
             # Load data directly
             try:
                 logger.info(f"Loading data from {input_data_path}")

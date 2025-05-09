@@ -35,7 +35,7 @@ for directory in [DATA_DIR, MODEL_DIR]:
 # Output file requirements
 REQUIRED_OUTPUT_FILES = API_CONFIG.get('required_files', [
     {"name": "metadata.json", "min_size": 100},
-    {"name": "pipeline.log", "min_size": 10}
+    {"name": "training.log", "min_size": 10}
 ])
 
 # Valid model_id pattern (alphanumeric with optional hyphens)
