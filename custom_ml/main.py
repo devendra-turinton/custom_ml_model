@@ -3,7 +3,7 @@ import sys
 import logging
 from datetime import datetime
 import src.ml_utils as ml_utils
-from ml_api.config import ML_CONFIG
+from custom_ml_api.config import ML_CONFIG
 logger = logging.getLogger(__name__)
 logging.getLogger(__name__).setLevel(logging.DEBUG)
 

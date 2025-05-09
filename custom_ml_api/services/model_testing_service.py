@@ -17,13 +17,13 @@ from custom_ml.testing_pipeline import ModelPredictor
 from custom_ml.src import ml_utils
 
 # Import local modules
-from ml_api.utils.error_handler import (
+from custom_ml_api.utils.error_handler import (
     ValidationError,
     ResourceNotFoundError,
     TestingError,
     FileValidationError
 )
-from ml_api.config import (
+from custom_ml_api.config import (
     CONFIG_PATH,
     MODEL_ID_PATTERN
 )

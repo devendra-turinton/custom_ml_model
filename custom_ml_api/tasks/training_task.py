@@ -8,8 +8,8 @@ import traceback
 from typing import Dict, Any
 from datetime import datetime
 
-from ml_api.services.model_service import ModelTrainingService
-from ml_api.utils.error_handler import TrainingError
+from custom_ml_api.services.model_service import ModelTrainingService
+from custom_ml_api.utils.error_handler import TrainingError
 
 logger = logging.getLogger(__name__)
 

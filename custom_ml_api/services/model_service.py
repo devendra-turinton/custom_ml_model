@@ -9,18 +9,18 @@ import pandas as pd
 from typing import Dict, Any, List, Optional, Tuple
 import traceback
 from datetime import datetime
-from ml_api.config import ML_CONFIG
+from custom_ml_api.config import ML_CONFIG
 # Import from the existing ML pipeline code
 from custom_ml.src import ml_utils
 
 # Import local modules
-from ml_api.utils.error_handler import (
+from custom_ml_api.utils.error_handler import (
     ValidationError,
     ResourceNotFoundError,
     TrainingError,
     FileValidationError
 )
-from ml_api.config import (
+from custom_ml_api.config import (
     MODEL_DIR,
     CONFIG_PATH,
     REQUIRED_OUTPUT_FILES,

@@ -5,15 +5,15 @@ import os
 import logging
 from flask import Flask, jsonify, request
 
-from ml_api.views.model_view import (
+from custom_ml_api.views.model_view import (
     ModelTrainingView,
     ModelFilesView
 )
-from ml_api.views.model_testing_view import (
+from custom_ml_api.views.model_testing_view import (
     ModelTestingView,
     TestResultFilesView
 )
-from ml_api.utils.error_handler import handle_exception, MLApiError
+from custom_ml_api.utils.error_handler import handle_exception, MLApiError
 
 # Configure logging
 logging.basicConfig(

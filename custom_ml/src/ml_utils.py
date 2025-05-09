@@ -31,7 +31,7 @@ def load_config(config_path: str = None) -> Dict[str, Any]:
     Returns:
         Dictionary containing the configuration
     """
-    from ml_api.config import CONFIG, CONFIG_PATH
+    from custom_ml_api.config import CONFIG, CONFIG_PATH
     
     # If no path specified or path is the same as main config, return pre-loaded config
     if config_path is None or config_path == CONFIG_PATH:

@@ -13,7 +13,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
 import custom_ml.src.ml_utils as ml_utils
-from ml_api.config import ML_CONFIG
+from custom_ml_api.config import ML_CONFIG
 
 
 # Get the logger

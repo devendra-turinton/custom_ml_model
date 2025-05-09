@@ -8,8 +8,8 @@ from flask import request, jsonify, send_file
 from flask.views import MethodView
 from typing import Dict, Any, Tuple
 
-from ml_api.services.model_testing_service import ModelTestingService
-from ml_api.utils.error_handler import handle_exception, TestingError
+from custom_ml_api.services.model_testing_service import ModelTestingService
+from custom_ml_api.utils.error_handler import handle_exception, TestingError
 
 logger = logging.getLogger(__name__)
 
