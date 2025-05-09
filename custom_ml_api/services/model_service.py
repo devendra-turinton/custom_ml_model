@@ -123,15 +123,7 @@ class ModelTrainingService:
                         args, config, df, os.path.dirname(input_data_path), 
                         version_dir, model_id
                     )
-                    validation_report_path = os.path.join(version_dir, "validation_report.md")
-                    custom_validation_info = {}
                     
-                    if os.path.exists(validation_report_path):
-                        custom_validation_info["validation_report"] = validation_report_path
-                        custom_validation_info["passed_validation"] = "✅ PASSED" in open(validation_report_path).read()
-                        logger.info(f"Custom pipeline validation: {'passed' if custom_validation_info['passed_validation'] else 'failed'}")
-                    else:
-                        logger.warning("No validation report found for custom pipeline")
 
                 else:
                     logger.info("Running default ML pipeline")
@@ -164,8 +156,7 @@ class ModelTrainingService:
                 "output_directory": version_dir
             }
 
-            if custom_ml_enabled and 'custom_validation_info' in locals():
-                result["custom_validation"] = custom_validation_info
+            
 
             return result
             

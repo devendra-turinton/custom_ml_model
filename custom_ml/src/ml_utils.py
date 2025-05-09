@@ -11,7 +11,7 @@ import traceback
 from datetime import datetime
 from typing import Callable, Dict,Optional, Any,Tuple
 from sklearn.base import BaseEstimator, TransformerMixin
-from custom_ml.src.pipeline_validation import validate_custom_pipeline_output, create_validation_report
+from custom_ml.src.pipeline_validation import validate_custom_pipeline_output
 
 
 # Initialize logger
@@ -1771,9 +1771,6 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
             # Log validation success
             logger.info("Custom pipeline validation successful - metadata contains all required fields for testing")
             
-            # Create and save validation report
-            validation_report_path = create_validation_report(validation_results, version_dir)
-            logger.info(f"Validation report saved to: {validation_report_path}")
             
         except ValueError as e:
             # Handle validation errors specifically related to testing
@@ -1805,10 +1802,6 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
             else:
                 # Other validation errors
                 raise
-        
-        # Create and save validation report
-        validation_report_path = create_validation_report(validation_results, version_dir)
-        logger.info(f"Validation report saved to: {validation_report_path}")
 
         
         fn_time = (datetime.now() - fn_start_time).total_seconds()

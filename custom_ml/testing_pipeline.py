@@ -1642,19 +1642,6 @@ class ModelPredictor:
         # Store prediction samples in metadata
         self._store_prediction_samples()
         
-        # Save full results DataFrame to CSV
-        try:
-            results_path = os.path.join(self.output_dir, "prediction_results.csv")
-            self.logger.debug(f"Saving full results to CSV: {results_path}")
-            self.result_df.to_csv(results_path, index=False)
-            
-            file_size_mb = os.path.getsize(results_path) / (1024 * 1024)
-            self.logger.info(f"Results saved to {results_path} ({file_size_mb:.2f} MB)")
-            
-            self.prediction_metadata['results']['results_file'] = results_path
-            self.prediction_metadata['results']['results_file_size_mb'] = file_size_mb
-        except Exception as e:
-            self.logger.warning(f"Could not save results to CSV: {str(e)}")
         
         # Make metadata serializable
         self.logger.debug("Processing metadata to ensure JSON serialization")

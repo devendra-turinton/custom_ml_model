@@ -1635,8 +1635,7 @@ class ClassificationPipeline(BasePipeline):
         for idx, row in sampled_predictions.iterrows():
             pred_dict = {
                 'actual': str(row['actual']),
-                'predicted': str(row['predicted']),
-                'correct': bool(row['correct'])
+                'predicted': str(row['predicted'])
             }
             
             # Add index if it's meaningful
