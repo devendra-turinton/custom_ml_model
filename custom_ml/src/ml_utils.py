@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime
 from typing import Callable, Dict,Optional, Any,Tuple
 from sklearn.base import BaseEstimator, TransformerMixin
+from custom_ml.src.pipeline_validation import validate_custom_pipeline_output, create_validation_report
 
 
 # Initialize logger
@@ -1752,6 +1753,63 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
 
         # The custom function should return (best_model, results, model_path, metadata_path)
         result = custom_function(**custom_args)
+
+        expected_model_path = os.path.join(version_dir, f"{model_id}.pkl")
+        expected_metadata_path = os.path.join(version_dir, "metadata.json")
+        
+        # Validate custom pipeline output with focus on testing compatibility
+        try:
+            is_valid, validation_results, metadata_obj = validate_custom_pipeline_output(
+                custom_function, 
+                result, 
+                expected_model_path, 
+                expected_metadata_path,
+                version_dir,
+                raise_errors=True  # Enforce validation requirements
+            )
+            
+            # Log validation success
+            logger.info("Custom pipeline validation successful - metadata contains all required fields for testing")
+            
+            # Create and save validation report
+            validation_report_path = create_validation_report(validation_results, version_dir)
+            logger.info(f"Validation report saved to: {validation_report_path}")
+            
+        except ValueError as e:
+            # Handle validation errors specifically related to testing
+            if "problem_type" in str(e) or "target_column" in str(e) or "preprocessing" in str(e):
+                error_msg = f"Custom pipeline validation failed for testing compatibility: {str(e)}"
+                logger.error(error_msg)
+                
+                # Create error guidance file
+                error_guide_path = os.path.join(version_dir, "testing_validation_error.txt")
+                with open(error_guide_path, 'w') as f:
+                    f.write("Testing Pipeline Validation Error\n")
+                    f.write("================================\n\n")
+                    f.write(f"Error: {str(e)}\n\n")
+                    f.write("Your custom code must produce metadata with the following fields:\n\n")
+                    f.write("1. problem_type: Include in either:\n")
+                    f.write("   - metadata['parameters']['problem_type']\n")
+                    f.write("   - metadata['best_model']['problem_type']\n\n")
+                    f.write("2. target_column: Include in one of these locations:\n")
+                    f.write("   - metadata['parameters']['target_column']\n") 
+                    f.write("   - metadata['target']\n")
+                    f.write("   - metadata['preprocessing']['target_column']\n\n")
+                    f.write("3. Feature information: Include in preprocessing:\n")
+                    f.write("   - metadata['preprocessing']['numeric_features']\n")
+                    f.write("   - metadata['preprocessing']['categorical_features']\n\n")
+                    f.write("These fields are REQUIRED for the testing pipeline to function correctly.\n")
+                
+                logger.error(f"Detailed error guidance written to: {error_guide_path}")
+                raise RuntimeError(error_msg) from e
+            else:
+                # Other validation errors
+                raise
+        
+        # Create and save validation report
+        validation_report_path = create_validation_report(validation_results, version_dir)
+        logger.info(f"Validation report saved to: {validation_report_path}")
+
         
         fn_time = (datetime.now() - fn_start_time).total_seconds()
         logger.info(f"Custom function executed in {fn_time:.2f} seconds")

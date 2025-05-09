@@ -72,6 +72,9 @@ class ModelTrainingView(MethodView):
                 "result": result,
                 "status": "completed"
             }
+
+            if "custom_validation" in result:
+                response["custom_validation"] = result["custom_validation"]
             
             return jsonify(response), 200
             
