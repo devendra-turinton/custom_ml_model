@@ -17,8 +17,7 @@ from custom_ml.src import ml_utils
 from custom_ml_api.utils.error_handler import (
     ValidationError,
     ResourceNotFoundError,
-    TrainingError,
-    FileValidationError
+    TrainingError
 )
 from custom_ml_api.config import (
     MODEL_DIR,
@@ -141,8 +140,6 @@ class ModelTrainingService:
             except Exception as e:
                 raise 
 
-            # Validate output files directly in the version directory
-            self.validate_output_files(version_dir)
             
             # Calculate training time
             training_time = (datetime.now() - start_time).total_seconds()
@@ -154,90 +151,18 @@ class ModelTrainingService:
                 "version": f"v{version_num}",
                 "status": "completed",
                 "training_time_seconds": training_time,
-                "output_directory": version_dir,
-                "files": self.get_output_file_info(version_dir)
-            }
+                "output_directory": version_dir            }
             
         except Exception as e:
             logger.error(f"Error in model training for model_id {model_id}: {str(e)}", exc_info=True)
             
-            if isinstance(e, (ValidationError, ResourceNotFoundError, TrainingError, FileValidationError)):
+            if isinstance(e, (ValidationError, ResourceNotFoundError, TrainingError)):
                 raise
             
             raise TrainingError(
                 f"Model training failed for model_id: {model_id}", 
                 {"error": str(e), "traceback": traceback.format_exc()}
             )
-
-    @staticmethod
-    def validate_output_files(output_dir: str) -> bool:
-        """
-        Validate that all required output files exist and meet size requirements.
-        
-        Args:
-            output_dir: Directory containing output files
-            
-        Returns:
-            bool: True if validation passes, raises FileValidationError otherwise
-        """
-        for file_info in REQUIRED_OUTPUT_FILES:
-            file_path = os.path.join(output_dir, file_info['name'])
-            
-            # Check if file exists
-            if not os.path.exists(file_path):
-                raise FileValidationError(
-                    f"Required output file {file_info['name']} not found",
-                    {"file": file_info['name'], "directory": output_dir}
-                )
-            
-            # Check if file is not empty and meets minimum size
-            file_size = os.path.getsize(file_path)
-            if file_size < file_info['min_size']:
-                raise FileValidationError(
-                    f"Output file {file_info['name']} is too small (size: {file_size} bytes, min: {file_info['min_size']} bytes)",
-                    {"file": file_info['name'], "size": file_size, "min_size": file_info['min_size']}
-                )
-            
-            # Special validation for metadata.json
-            if file_info['name'] == 'metadata.json':
-                try:
-                    with open(file_path, 'r') as f:
-                        json.load(f)  # Try to load as JSON
-                except json.JSONDecodeError:
-                    raise FileValidationError(
-                        f"Output file {file_info['name']} is not valid JSON",
-                        {"file": file_info['name']}
-                    )
-        
-        logger.info(f"All required output files validated successfully in {output_dir}")
-        return True
-
-    @staticmethod
-    def get_output_file_info(output_dir: str) -> List[Dict[str, Any]]:
-        """
-        Get information about output files.
-        
-        Args:
-            output_dir: Directory containing output files
-            
-        Returns:
-            List of dictionaries with file info
-        """
-        file_info = []
-        
-        for file_info_spec in REQUIRED_OUTPUT_FILES:
-            file_path = os.path.join(output_dir, file_info_spec['name'])
-            
-            if os.path.exists(file_path):
-                file_size = os.path.getsize(file_path)
-                file_info.append({
-                    "name": file_info_spec['name'],
-                    "path": file_path,
-                    "size_bytes": file_size,
-                    "last_modified": datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                })
-        
-        return file_info
 
     def get_model_files(self, model_id: str) -> Dict[str, str]:
         """

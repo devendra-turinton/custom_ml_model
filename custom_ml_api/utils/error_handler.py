@@ -49,11 +49,6 @@ class TestingError(MLApiError):
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(message, status_code=500, details=details)
 
-class FileValidationError(MLApiError):
-    """Raised when output file validation fails."""
-    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(message, status_code=500, details=details)
-
 
 def handle_exception(e: Exception) -> Tuple[Dict[str, Any], int]:
     """

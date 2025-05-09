@@ -1847,49 +1847,6 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
             logger.error(f"Invalid result from custom function. Expected a tuple with at least 4 items.")
             raise ValueError(f"Invalid result from custom function. Expected a tuple with at least 4 items.")
         
-        # Validate the metadata from the custom flow
-        try:
-            logger.info(f"Validating custom model metadata: {metadata_path}")
-            
-            # Load the metadata
-            with open(metadata_path, 'r') as f:
-                metadata_content = json.load(f)
-            
-            # Create validator and validate
-            validator = MetadataValidator(strict_mode=False)
-            is_valid, messages = validator.validate_metadata(metadata_content)
-            
-            # Update metadata with validation results
-            validation_result = {
-                'metadata_validated': True,
-                'validation_timestamp': datetime.now().isoformat(),
-                'validation_passed': is_valid,
-                'validation_issues': messages
-            }
-            
-            metadata_content['validation'] = validation_result
-            
-            # Save updated metadata
-            with open(metadata_path, 'w') as f:
-                json.dump(metadata_content, f, indent=2)
-            
-            # Log validation results
-            if is_valid:
-                logger.info("✅ Custom model metadata validation PASSED")
-                print("\n✅ Metadata validation PASSED - Model is ready for testing\n")
-            else:
-                logger.warning(f"⚠️ Custom model metadata validation found {len(messages)} issues")
-                for msg in messages:
-                    logger.warning(f"  - {msg}")
-                
-                # Print warning to console for visibility
-                print(f"\n⚠️ WARNING: Custom model metadata has {len(messages)} validation issues")
-                print("The model may not work correctly with the testing pipeline.")
-                print(f"See validation issues in metadata: {metadata_path}\n")
-                
-        except Exception as e:
-            logger.warning(f"Error during metadata validation (non-fatal): {str(e)}", exc_info=True)
-        
         
         total_time = (datetime.now() - start_time).total_seconds()
         logger.info(f"Custom ML flow completed in {total_time:.2f} seconds")

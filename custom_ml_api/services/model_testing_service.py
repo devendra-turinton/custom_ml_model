@@ -20,8 +20,7 @@ from custom_ml.src import ml_utils
 from custom_ml_api.utils.error_handler import (
     ValidationError,
     ResourceNotFoundError,
-    TestingError,
-    FileValidationError
+    TestingError
 )
 from custom_ml_api.config import (
     CONFIG_PATH,
@@ -155,7 +154,7 @@ class ModelTestingService:
         except Exception as e:
             logger.error(f"Error in model testing for model_id {model_id}: {str(e)}", exc_info=True)
             
-            if isinstance(e, (ValidationError, ResourceNotFoundError, TestingError, FileValidationError)):
+            if isinstance(e, (ValidationError, ResourceNotFoundError, TestingError)):
                 raise
             
             raise TestingError(
