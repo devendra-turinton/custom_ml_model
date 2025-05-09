@@ -1048,110 +1048,30 @@ class RegressionPipeline(BasePipeline):
             'actual': self.y_test.values if hasattr(self.y_test, 'values') else self.y_test,
             'predicted': predictions
         })
-        
-        # Add prediction error
-        prediction_df['error'] = prediction_df['actual'] - prediction_df['predicted']
-        prediction_df['abs_error'] = np.abs(prediction_df['error'])
-        
-        # Calculate relative error where safe to do so
-        try:
-            with np.errstate(divide='ignore', invalid='ignore'):
-                prediction_df['rel_error_pct'] = (prediction_df['error'] / prediction_df['actual']) * 100
-            # Replace infinities and NaNs
-            prediction_df['rel_error_pct'].replace([np.inf, -np.inf], np.nan, inplace=True)
-        except Exception as e:
-            logger.debug(f"Could not calculate relative error: {str(e)}")
-        
-        # If there's an index in the original test data, try to preserve it
-        if hasattr(self.y_test, 'index') and self.y_test.index is not None:
-            prediction_df.index = self.y_test.index
-            logger.debug(f"Using original index from test data with {len(prediction_df.index)} values")
-        
-        # Sample from different error ranges for better analysis
-        try:
-            # Sort by absolute error
-            sorted_df = prediction_df.sort_values('abs_error', ascending=False)
             
-            # Get predictions with largest errors (20% of samples)
-            largest_errors = sorted_df.head(int(max_predictions * 0.2))
-            logger.debug(f"Including {len(largest_errors)} predictions with largest errors")
-            
-            # Get some random samples (60% of samples)
-            random_samples = prediction_df.sample(n=min(int(max_predictions * 0.6), len(prediction_df) - len(largest_errors)))
-            logger.debug(f"Including {len(random_samples)} random predictions")
-            
-            # Get predictions with smallest errors (20% of samples)
-            smallest_errors = sorted_df.tail(int(max_predictions * 0.2))
-            logger.debug(f"Including {len(smallest_errors)} predictions with smallest errors")
-            
-            # Combine the samples
-            sampled_predictions = pd.concat([largest_errors, random_samples, smallest_errors])
-            
-            # Remove duplicates (in case of overlap)
-            sampled_predictions = sampled_predictions[~sampled_predictions.index.duplicated(keep='first')]
-            
-            # Make sure we don't exceed max_predictions
-            if len(sampled_predictions) > max_predictions:
-                sampled_predictions = sampled_predictions.sample(n=max_predictions)
-                
-            logger.info(f"Storing {len(sampled_predictions)} predictions in metadata (strategically sampled from {len(prediction_df)} total)")
-        except Exception as e:
-            logger.warning(f"Error in strategic sampling: {str(e)}. Falling back to simple sampling")
-            
-            # Fallback to simpler sampling
-            if len(prediction_df) > max_predictions:
-                sampled_predictions = prediction_df.sample(n=max_predictions, random_state=42)
-                logger.info(f"Storing {len(sampled_predictions)} predictions in metadata (randomly sampled from {len(prediction_df)} total)")
-            else:
-                # Store all predictions if under the limit
-                sampled_predictions = prediction_df
-                logger.info(f"Storing all {len(prediction_df)} predictions in metadata")
-        
+        # Fallback to simpler sampling
+        if len(prediction_df) > max_predictions:
+            sampled_predictions = prediction_df.sample(n=max_predictions, random_state=42)
+            logger.info(f"Storing {len(sampled_predictions)} predictions in metadata (randomly sampled from {len(prediction_df)} total)")
+        else:
+            # Store all predictions if under the limit
+            sampled_predictions = prediction_df
+            logger.info(f"Storing all {len(prediction_df)} predictions in metadata")
+    
         # Convert to list for storing in metadata
         predictions_list = []
         for idx, row in sampled_predictions.iterrows():
             pred_entry = {
                 'actual': float(row['actual']),
-                'predicted': float(row['predicted']),
-                'error': float(row['error']),
-                'abs_error': float(row['abs_error'])
+                'predicted': float(row['predicted'])
             }
-            
-            # Add relative error if available
-            if 'rel_error_pct' in row and not pd.isna(row['rel_error_pct']):
-                pred_entry['rel_error_pct'] = float(row['rel_error_pct'])
-                
-            # Add index if meaningful
-            if hasattr(idx, 'strftime'):  # For datetime index
-                pred_entry['index'] = idx.strftime('%Y-%m-%d %H:%M:%S')
-            elif not isinstance(idx, int) or idx != sampled_predictions.index.get_loc(idx):  # For non-default indices
-                pred_entry['index'] = str(idx)
                 
             predictions_list.append(pred_entry)
         
         # Add to metadata
         self.metadata['best_model']['prediction_samples'] = predictions_list
         
-        # Log summary stats of the predictions
-        error_mean = prediction_df['error'].mean()
-        error_std = prediction_df['error'].std()
-        abs_error_mean = prediction_df['abs_error'].mean()
-        
-        logger.debug(f"Prediction error statistics - Mean: {error_mean:.4f}, Std: {error_std:.4f}, Mean Abs: {abs_error_mean:.4f}")
-        
-        # Calculate errors by percentile of target values
-        try:
-            percentiles = [0, 25, 50, 75, 100]
-            prediction_df['target_percentile'] = pd.qcut(prediction_df['actual'], 4, labels=False)
-            error_by_percentile = prediction_df.groupby('target_percentile')['abs_error'].mean()
-            
-            logger.debug("Mean absolute error by target value percentile:")
-            for i, error in enumerate(error_by_percentile):
-                range_min = np.percentile(prediction_df['actual'], percentiles[i])
-                range_max = np.percentile(prediction_df['actual'], percentiles[i+1])
-                logger.debug(f"  Percentile {percentiles[i]}-{percentiles[i+1]} ({range_min:.4f}-{range_max:.4f}): {error:.4f}")
-        except Exception as e:
-            logger.debug(f"Could not calculate errors by target percentile: {str(e)}")
+
         
         store_time = (datetime.now() - store_start).total_seconds()
         logger.debug(f"Stored prediction samples in {store_time:.2f} seconds")

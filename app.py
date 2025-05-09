@@ -20,8 +20,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('ml_api.log')
+        logging.StreamHandler()
+        #logging.FileHandler('ml_api.log')
     ]
 )
 
