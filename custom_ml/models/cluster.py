@@ -4,34 +4,44 @@ import pickle
 import numpy as np
 import pandas as pd
 import logging
-from typing import Any, Dict,Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+from collections import Counter
 
 from sklearn.compose import ColumnTransformer
-from sklearn.discriminant_analysis import StandardScaler
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, RobustScaler
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, OneHotEncoder, RobustScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, Birch
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+from sklearn.neighbors import NearestNeighbors
 
-from src import ml_utils
-from training_pipeline import BasePipeline
+from custom_ml.src import ml_utils
+from custom_ml.training_pipeline import BasePipeline
 logger = logging.getLogger(__name__)
 logging.getLogger(__name__).setLevel(logging.DEBUG)
 
 
-#########################################
-# Clustering Pipeline
-#########################################
-
 class ClusteringPipeline(BasePipeline):
+    """
+    Pipeline for clustering tasks.
+    
+    This pipeline is designed for unsupervised clustering of data.
+    It supports multiple clustering algorithms and methods for estimating 
+    the optimal number of clusters.
+    """
     
     def __init__(
-            self,
+            self, 
             data_path: Optional[str] = None,
             df: Optional[pd.DataFrame] = None,
             n_clusters: Optional[int] = None,
             config_path: Optional[str] = "config/config.yaml",
             output_dir: Optional[str] = None,
             model_id: Optional[str] = None,
+            version: Optional[str] = None,
             cluster_range: Optional[Tuple[int, int]] = (2, 15),
             dim_reduction: str = 'pca',
             n_components: int = 2
@@ -44,16 +54,19 @@ class ClusteringPipeline(BasePipeline):
             df: DataFrame (alternative to data_path)
             n_clusters: Number of clusters (if None, will be estimated)
             config_path: Path to configuration file
-            output_dir: Directory for outputs
+            output_dir: Output directory for model artifacts
             model_id: Unique identifier for the model
+            version: Version string
             cluster_range: Range of clusters to try for optimal cluster selection
             dim_reduction: Dimensionality reduction method ('pca', 'tsne', 'none')
             n_components: Number of components for dimensionality reduction
         """
         # Call the parent class constructor without a target variable
         super().__init__(data_path=data_path, df=df, target=None, 
-                          config_path=config_path, output_dir=output_dir, model_id=model_id)
+                         config_path=config_path, output_dir=output_dir, 
+                         model_id=model_id, version=version)
         
+        # Initialize clustering-specific attributes
         self.problem_type = 'clustering'
         self.n_clusters = n_clusters
         self.cluster_range = cluster_range
@@ -69,7 +82,16 @@ class ClusteringPipeline(BasePipeline):
         self.optimal_clusters = n_clusters
         self.feature_importances = None
         
-        logger.info("Clustering Pipeline initialized")
+        # Update metadata with clustering parameters
+        self.metadata['parameters'].update({
+            'problem_type': 'clustering',
+            'n_clusters': n_clusters,
+            'cluster_range': [int(cluster_range[0]), int(cluster_range[1])],
+            'dim_reduction': dim_reduction,
+            'n_components': n_components
+        })
+        
+        logger.info(f"Clustering Pipeline initialized")
         if n_clusters is not None:
             logger.info(f"Using specified number of clusters: {n_clusters}")
         else:
@@ -83,6 +105,7 @@ class ClusteringPipeline(BasePipeline):
             bool: True if validation passes
         """
         logger.info("Validating data for clustering...")
+        validation_start_time = datetime.now()
         
         if self.df is None:
             error_msg = "Data not loaded. Call load_data() first."
@@ -118,6 +141,7 @@ class ClusteringPipeline(BasePipeline):
             validation_results['has_numeric_columns'] = False
         else:
             validation_results['has_numeric_columns'] = True
+            logger.debug(f"Found {len(numeric_columns)} numeric columns")
         
         # Check for missing values
         missing_values = self.df.isnull().sum()
@@ -125,6 +149,7 @@ class ClusteringPipeline(BasePipeline):
         
         if not columns_with_missing.empty:
             missing_data = {}
+            logger.warning(f"Found {len(columns_with_missing)} columns with missing values")
             for col, count in columns_with_missing.items():
                 percent = (count / len(self.df)) * 100
                 logger.info(f"  {col}: {count} missing values ({percent:.2f}%)")
@@ -135,8 +160,21 @@ class ClusteringPipeline(BasePipeline):
             validation_results['columns_with_missing'] = missing_data
         else:
             validation_results['columns_with_missing'] = {}
+            logger.info("No missing values found in the dataset")
         
+        # Check sample size
+        if len(self.df) < 10:
+            logger.warning(f"Very small dataset with only {len(self.df)} samples. Clustering may not be effective.")
         
+        # Check dimensionality
+        if len(self.df.columns) > 100:
+            logger.warning(f"High-dimensional data with {len(self.df.columns)} features. Consider dimensionality reduction.")
+        
+        # Update metadata with validation results
+        self.metadata['data']['validation'] = validation_results
+        
+        validation_time = (datetime.now() - validation_start_time).total_seconds()
+        logger.info(f"Data validation completed in {validation_time:.2f} seconds")
         logger.info(f"Data validated: {len(self.df.columns)} feature columns available for clustering")
         
         return True
@@ -148,10 +186,10 @@ class ClusteringPipeline(BasePipeline):
         Returns:
             np.ndarray: Preprocessed data ready for clustering
         """
-        logger.info("Preprocessing data...")
+        logger.info("Preprocessing data for clustering...")
+        preprocess_start_time = datetime.now()
         
         preprocessing_metadata = {}
-        start_time = datetime.now()
         
         # Create preprocessing steps for different column types
         numeric_transformer = Pipeline(steps=[
@@ -196,6 +234,8 @@ class ClusteringPipeline(BasePipeline):
         self.X = self.df
         self.X_transformed = self.preprocessor.fit_transform(self.df)
         
+        logger.debug(f"Data shape after preprocessing: {self.X_transformed.shape}")
+        
         # Apply scaling
         scaling_method = self.model_config.get('preprocessing', {}).get('scaling', 'standard')
         preprocessing_metadata['scaling_method'] = scaling_method
@@ -218,6 +258,8 @@ class ClusteringPipeline(BasePipeline):
         else:
             self.X_scaled = self.X_transformed
         
+        logger.debug(f"Data shape after scaling: {self.X_scaled.shape}")
+        
         # Apply dimensionality reduction if selected
         if self.dim_reduction != 'none' and self.X_scaled.shape[1] > self.n_components:
             self.apply_dimensionality_reduction()
@@ -235,7 +277,7 @@ class ClusteringPipeline(BasePipeline):
                 'method': 'none'
             }
         
-        preprocessing_time = (datetime.now() - start_time).total_seconds()
+        preprocessing_time = (datetime.now() - preprocess_start_time).total_seconds()
         logger.info(f"Preprocessing completed in {preprocessing_time:.2f} seconds")
         
         # Update metadata
@@ -252,13 +294,10 @@ class ClusteringPipeline(BasePipeline):
         Returns:
             np.ndarray: Reduced dimensionality data
         """
-        from sklearn.decomposition import PCA
-        from sklearn.manifold import TSNE
-        
         logger.info(f"Applying {self.dim_reduction} dimensionality reduction to {self.n_components} components")
+        dim_reduction_start_time = datetime.now()
         
         dim_reduction_metadata = {}
-        start_time = datetime.now()
         
         # Determine effective n_components
         max_components = min(self.X_scaled.shape[0], self.X_scaled.shape[1])
@@ -288,6 +327,7 @@ class ClusteringPipeline(BasePipeline):
                         columns=[f'PC{i+1}' for i in range(n_components)]
                     )
                     
+                    # Store explained variance in metadata
                     dim_reduction_metadata['explained_variance'] = {
                         f'PC{i+1}': float(var) for i, var in enumerate(reducer.explained_variance_ratio_)
                     }
@@ -301,15 +341,22 @@ class ClusteringPipeline(BasePipeline):
                 
         elif self.dim_reduction == 'tsne':
             reducer = TSNE(n_components=n_components, random_state=self.random_state)
+            logger.info("TSNE can be slow for large datasets. Starting dimensionality reduction...")
             self.X_reduced = reducer.fit_transform(self.X_scaled)
+            logger.info("TSNE dimensionality reduction completed")
+        else:
+            logger.warning(f"Unknown dimensionality reduction method: {self.dim_reduction}")
+            self.X_reduced = self.X_scaled
         
-        dim_reduction_time = (datetime.now() - start_time).total_seconds()
+        dim_reduction_time = (datetime.now() - dim_reduction_start_time).total_seconds()
+        logger.info(f"Dimensionality reduction completed in {dim_reduction_time:.2f} seconds")
+        
         dim_reduction_metadata['time_seconds'] = dim_reduction_time
         dim_reduction_metadata['output_shape'] = self.X_reduced.shape
         
-        logger.info(f"Dimensionality reduction completed in {dim_reduction_time:.2f} seconds")
-        
         # Update metadata
+        if 'preprocessing' not in self.metadata:
+            self.metadata['preprocessing'] = {}
         self.metadata['preprocessing']['dimensionality_reduction'] = dim_reduction_metadata
         
         return self.X_reduced
@@ -324,11 +371,8 @@ class ClusteringPipeline(BasePipeline):
         Returns:
             int: Estimated optimal number of clusters
         """
-        from sklearn.cluster import KMeans
-        from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-        from collections import Counter
-        
         logger.info("Estimating optimal number of clusters...")
+        estimation_start_time = datetime.now()
         
         if self.n_clusters is not None:
             logger.info(f"Using user-specified number of clusters: {self.n_clusters}")
@@ -339,8 +383,10 @@ class ClusteringPipeline(BasePipeline):
             }
             return self.n_clusters
         
+        if 'models' not in self.metadata:
+            self.metadata['models'] = {}
+        
         estimation_metadata = {}
-        start_time = datetime.now()
         
         logger.info(f"Estimating optimal number of clusters in range {self.cluster_range}...")
         estimation_metadata['cluster_range'] = self.cluster_range
@@ -365,7 +411,7 @@ class ClusteringPipeline(BasePipeline):
         }
         
         for k in cluster_range:
-            logger.info(f"Testing k={k} clusters")
+            logger.debug(f"Testing k={k} clusters")
             # Run K-means
             kmeans = KMeans(n_clusters=k, random_state=self.random_state, n_init=10)
             cluster_labels = kmeans.fit_predict(data)
@@ -497,52 +543,46 @@ class ClusteringPipeline(BasePipeline):
                 'optimal_clusters': int(self.optimal_clusters)
             }
         
-        total_time = (datetime.now() - start_time).total_seconds()
+        total_time = (datetime.now() - estimation_start_time).total_seconds()
         estimation_metadata['time_seconds'] = total_time
         
         # Update metadata
         self.metadata['models']['cluster_estimation'] = estimation_metadata
         
-        logger.info(f"Optimal number of clusters: {self.optimal_clusters}")
+        logger.info(f"Selected optimal number of clusters: {self.optimal_clusters}")
         return self.optimal_clusters
     
-    def train_models(self, data=None) -> Dict[str, Any]:
+    def train_models(self) -> Dict[str, Any]:
         """
         Train multiple clustering models.
         
-        Args:
-            data: Preprocessed data for clustering (optional)
-            
         Returns:
             dict: Trained models with their labels
         """
-        from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, Birch
-        from sklearn.mixture import GaussianMixture
-        
         logger.info("Training clustering models...")
+        train_start_time = datetime.now()
         
-        training_metadata = {}
-        start_time = datetime.now()
-        
-        # Use the provided data or the preprocessed data
-        if data is None:
-            if self.X_reduced is not None:
-                data = self.X_reduced
-                logger.info("Using dimensionally-reduced data for clustering")
-            else:
-                data = self.X_scaled
-                logger.info("Using scaled data for clustering")
+        # Use the preprocessed data
+        if self.X_reduced is not None:
+            data = self.X_reduced
+            logger.info("Using dimensionally-reduced data for clustering")
+        else:
+            data = self.X_scaled
+            logger.info("Using scaled data for clustering")
         
         # Estimate optimal number of clusters if not provided
         if self.optimal_clusters is None:
             self.estimate_optimal_clusters(data)
         
         n_clusters = self.optimal_clusters
-        training_metadata['n_clusters'] = n_clusters
         
-        # Initialize models dictionary
+        # Initialize models dictionary and metadata
         self.models = {}
-        training_metadata['models'] = {}
+        if 'models' not in self.metadata:
+            self.metadata['models'] = {}
+        
+        training_metadata = {'models': {}}
+        training_metadata['n_clusters'] = n_clusters
         
         # Train K-means
         try:
@@ -650,7 +690,6 @@ class ClusteringPipeline(BasePipeline):
             model_start = datetime.now()
             
             # Estimate eps using nearest neighbors
-            from sklearn.neighbors import NearestNeighbors
             nn = NearestNeighbors(n_neighbors=min(20, data.shape[0]-1))
             nn.fit(data)
             distances, _ = nn.kneighbors(data)
@@ -723,46 +762,38 @@ class ClusteringPipeline(BasePipeline):
                 'error': str(e)
             }
         
-        total_time = (datetime.now() - start_time).total_seconds()
+        total_time = (datetime.now() - train_start_time).total_seconds()
         logger.info(f"All clustering models trained in {total_time:.2f} seconds")
         
+        # Update metadata
         training_metadata['total_time_seconds'] = total_time
         training_metadata['n_models_trained'] = len(self.models)
-        
-        # Update metadata
         self.metadata['models']['training'] = training_metadata
         
         return self.models
     
-    def evaluate_models(self, data=None) -> pd.DataFrame:
+    def evaluate_models(self) -> pd.DataFrame:
         """
         Evaluate trained clustering models.
         
-        Args:
-            data: Data used for clustering (optional)
-            
         Returns:
             pd.DataFrame: Results with performance metrics
         """
-        from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
-        
         if not self.models:
             error_msg = "No trained models. Call train_models() first."
             logger.error(error_msg)
             raise ValueError(error_msg)
         
         logger.info("Evaluating clustering models...")
+        eval_start_time = datetime.now()
+        
+        # Use the preprocessed data
+        if self.X_reduced is not None:
+            data = self.X_reduced
+        else:
+            data = self.X_scaled
         
         evaluation_metadata = {}
-        start_time = datetime.now()
-        
-        # Use the provided data or the preprocessed data
-        if data is None:
-            if self.X_reduced is not None:
-                data = self.X_reduced
-            else:
-                data = self.X_scaled
-        
         results = []
         
         for name, model_dict in self.models.items():
@@ -900,7 +931,20 @@ class ClusteringPipeline(BasePipeline):
                 best_silhouette = non_nan_results.loc[best_idx, 'silhouette']
                 
                 self.best_model = self.models[best_model_name]
-                logger.info(f"Best model: {best_model_name} (Silhouette = {best_silhouette:.4f})")
+                logger.info(f"Best model based on silhouette score: {best_model_name} (Silhouette = {best_silhouette:.4f})")
+                
+                # Initialize best_model metadata if not exists
+                if 'best_model' not in self.metadata:
+                    self.metadata['best_model'] = {}
+                
+                # Update best_model metadata
+                self.metadata['best_model'].update({
+                    'name': best_model_name,
+                    'model_type': str(type(self.best_model['model']).__name__),
+                    'primary_metric': 'silhouette',
+                    'primary_metric_value': float(best_silhouette),
+                    'n_clusters': int(non_nan_results.loc[best_idx, 'n_clusters'])
+                })
                 
                 evaluation_metadata['best_model'] = {
                     'name': best_model_name,
@@ -919,7 +963,20 @@ class ClusteringPipeline(BasePipeline):
                     best_model_name = self.results.loc[best_idx, 'model']
                     
                     self.best_model = self.models[best_model_name]
-                    logger.info(f"Best model: {best_model_name} (based on having number of clusters closest to target)")
+                    logger.info(f"Best model based on cluster count: {best_model_name}")
+                    
+                    # Initialize best_model metadata if not exists
+                    if 'best_model' not in self.metadata:
+                        self.metadata['best_model'] = {}
+                    
+                    # Update best_model metadata
+                    self.metadata['best_model'].update({
+                        'name': best_model_name,
+                        'model_type': str(type(self.best_model['model']).__name__),
+                        'primary_metric': 'cluster_count',
+                        'criterion': 'closest_to_target_clusters',
+                        'n_clusters': int(self.results.loc[best_idx, 'n_clusters'])
+                    })
                     
                     evaluation_metadata['best_model'] = {
                         'name': best_model_name,
@@ -932,12 +989,24 @@ class ClusteringPipeline(BasePipeline):
                     self.best_model = self.models[best_model_name]
                     logger.warning(f"No valid evaluation criteria. Using {best_model_name} as default best model")
                     
+                    # Initialize best_model metadata if not exists
+                    if 'best_model' not in self.metadata:
+                        self.metadata['best_model'] = {}
+                    
+                    # Update best_model metadata
+                    self.metadata['best_model'].update({
+                        'name': best_model_name,
+                        'model_type': str(type(self.best_model['model']).__name__),
+                        'primary_metric': 'default_selection',
+                        'criterion': 'default_first_model'
+                    })
+                    
                     evaluation_metadata['best_model'] = {
                         'name': best_model_name,
                         'criterion': 'default_first_model'
                     }
         
-        total_time = (datetime.now() - start_time).total_seconds()
+        total_time = (datetime.now() - eval_start_time).total_seconds()
         evaluation_metadata['total_time_seconds'] = total_time
         
         # Update metadata
@@ -958,8 +1027,6 @@ class ClusteringPipeline(BasePipeline):
             raise ValueError(error_msg)
         
         logger.info("Saving best model and preprocessing pipeline...")
-        
-        model_metadata = {}
         start_time = datetime.now()
         
         # Get the best model name
@@ -973,6 +1040,7 @@ class ClusteringPipeline(BasePipeline):
             'dim_reduction': self.dim_reduction,
             'n_components': self.n_components,
             'model_name': best_model_name,
+            'problem_type': 'clustering',
             'timestamp': datetime.now().isoformat()
         }
         
@@ -982,25 +1050,15 @@ class ClusteringPipeline(BasePipeline):
         with open(model_filename, 'wb') as f:
             pickle.dump(model_package, f)
         
-        logger.info(f"Model package saved to {model_filename}")
-        model_metadata['model_file'] = model_filename
-        
-        # Save model results
-        if not self.results.empty:
-            results_filename = os.path.join(self.output_dir, f"{self.model_id}_results.csv")
-            self.results.to_csv(results_filename, index=False)
-            logger.info(f"Results saved to {results_filename}")
-            model_metadata['results_file'] = results_filename
-        
-        total_time = (datetime.now() - start_time).total_seconds()
-        model_metadata['save_time_seconds'] = total_time
+        save_time = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Best model ({best_model_name}) saved to {model_filename} in {save_time:.2f} seconds")
         
         # Update metadata
-        self.metadata['best_model'].update(model_metadata)
-        self.save_metadata()
+        self.metadata['best_model']['filename'] = model_filename
+        self.metadata['best_model']['save_time_seconds'] = save_time
         
         return model_filename
-
+    
     def run_pipeline(self) -> Tuple[Any, pd.DataFrame]:
         """
         Run the complete pipeline.
@@ -1008,36 +1066,72 @@ class ClusteringPipeline(BasePipeline):
         Returns:
             tuple: (best_model, evaluation_results)
         """
-        logger.info("Starting clustering ML pipeline...")
+        logger.info(f"Starting Clustering ML pipeline run - ID: {self.model_id}")
         pipeline_start = datetime.now()
         
         try:
             # Load and validate data
-            logger.info("\nLoading and validating data...")
+            logger.info("\n" + "="*50)
+            logger.info("STEP 1: Loading and validating data")
+            logger.info("="*50)
+            step_start = datetime.now()
             self.load_data()
             self.validate_data()
-            logger.info(f"Data loaded: {self.df.shape[0]} rows, {self.df.shape[1]} columns")
+            step_time = (datetime.now() - step_start).total_seconds()
+            logger.info(f"Data loaded and validated: {self.df.shape[0]:,} rows, {self.df.shape[1]:,} columns")
+            logger.info(f"Step completed in {step_time:.2f} seconds")
             
             # Preprocess data
-            logger.info("\nPreprocessing data...")
-            data = self.preprocess_data()
+            logger.info("\n" + "="*50)
+            logger.info("STEP 2: Preprocessing data")
+            logger.info("="*50)
+            step_start = datetime.now()
+            self.preprocess_data()
+            step_time = (datetime.now() - step_start).total_seconds()
+            logger.info(f"Data preprocessed and ready for clustering")
+            logger.info(f"Step completed in {step_time:.2f} seconds")
             
             # Train models
-            logger.info("\nTraining clustering models...")
-            self.train_models(data)
-            logger.info(f"Trained {len(self.models)} models")
+            logger.info("\n" + "="*50)
+            logger.info("STEP 3: Training models")
+            logger.info("="*50)
+            step_start = datetime.now()
+            self.train_models()
+            step_time = (datetime.now() - step_start).total_seconds()
+            logger.info(f"Trained {len(self.models):,} clustering models")
+            logger.info(f"Step completed in {step_time:.2f} seconds")
             
             # Evaluate models
-            logger.info("\nEvaluating models...")
-            self.evaluate_models(data)
+            logger.info("\n" + "="*50)
+            logger.info("STEP 4: Evaluating models")
+            logger.info("="*50)
+            step_start = datetime.now()
+            self.evaluate_models()
+            step_time = (datetime.now() - step_start).total_seconds()
+            
+            # Log best model details
+            best_model_name = self.metadata['best_model'].get('name', 'Unknown')
+            best_model_metric = self.metadata['best_model'].get('primary_metric', 'Unknown')
+            best_model_score = self.metadata['best_model'].get('primary_metric_value', 'Unknown')
+            logger.info(f"Best model: {best_model_name} with {best_model_metric}={best_model_score}")
+            logger.info(f"Step completed in {step_time:.2f} seconds")
             
             # Save the best model
-            logger.info("\nSaving model...")
-            self.save_model()
+            logger.info("\n" + "="*50)
+            logger.info("STEP 5: Saving model")
+            logger.info("="*50)
+            step_start = datetime.now()
+            model_path = self.save_model()
+            step_time = (datetime.now() - step_start).total_seconds()
+            logger.info(f"Model saved to: {model_path}")
+            logger.info(f"Step completed in {step_time:.2f} seconds")
             
             # Calculate total runtime
             pipeline_runtime = (datetime.now() - pipeline_start).total_seconds()
-            logger.info(f"\nPipeline completed in {pipeline_runtime:.2f} seconds!")
+            
+            logger.info("\n" + "="*50)
+            logger.info(f"Pipeline completed successfully in {pipeline_runtime:.2f} seconds!")
+            logger.info("="*50)
             
             # Final metadata updates
             self.metadata['runtime_seconds'] = pipeline_runtime
@@ -1052,7 +1146,8 @@ class ClusteringPipeline(BasePipeline):
             # Update metadata with error information
             self.metadata['status'] = 'failed'
             self.metadata['error'] = str(e)
+            self.metadata['failure_timestamp'] = datetime.now().isoformat()
             self.save_metadata()
             
+            # Re-raise the exception
             raise
-
