@@ -969,35 +969,6 @@ class RegressionPipeline(BasePipeline):
             best_errors = self.y_test - best_test_predictions
             abs_errors = np.abs(best_errors)
             
-            # Error distribution by percentile
-            error_percentiles = [10, 25, 50, 75, 90, 95, 99]
-            error_by_percentile = {f"p{p}": float(np.percentile(abs_errors, p)) for p in error_percentiles}
-            
-            logger.debug(f"Best model absolute error distribution:")
-            for p, v in error_by_percentile.items():
-                logger.debug(f"  {p}: {v:.4f}")
-            
-            # Error by target value range
-            if hasattr(self.y_test, 'values'):
-                y_values = self.y_test.values
-            else:
-                y_values = self.y_test
-                
-            # Analyze errors by target value quantiles
-            try:
-                target_quantiles = 4  # Quartiles
-                y_test_quantiles = pd.qcut(y_values, target_quantiles, duplicates='drop')
-                quantile_labels = sorted(set(y_test_quantiles))
-                
-                logger.debug(f"Error analysis by target value range:")
-                for q in quantile_labels:
-                    mask = (y_test_quantiles == q)
-                    q_errors = abs_errors[mask]
-                    q_mae = np.mean(q_errors)
-                    q_mape = np.mean(q_errors / np.abs(y_values[mask])) * 100
-                    logger.debug(f"  Range {q}: MAE={q_mae:.4f}, MAPE={q_mape:.2f}%, Count={np.sum(mask)}")
-            except Exception as e:
-                logger.debug(f"Could not analyze errors by target range: {str(e)}")
 
             # Store predictions in metadata
             self._store_best_model_predictions(best_model_name, best_test_predictions)
@@ -1014,7 +985,6 @@ class RegressionPipeline(BasePipeline):
             
             # Add error distribution analysis
             self.metadata['best_model']['error_analysis'] = {
-                'percentiles': error_by_percentile,
                 'mean_abs_error': float(np.mean(abs_errors)),
                 'median_abs_error': float(np.median(abs_errors)),
                 'std_error': float(np.std(best_errors)),
