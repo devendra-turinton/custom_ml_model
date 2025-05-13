@@ -80,19 +80,19 @@ class TimeSeriesPipeline(BasePipeline):
         self.feature_importance = None
         self.forecast_df = None
         
-        logger.info("Time Series Pipeline initialized")
+        self.job_logger.info("Time Series Pipeline initialized")
     
     def validate_data(self) -> bool:
         """
         Validate the data for time series analysis.
         """
-        logger.info("Validating data for time series analysis...")
+        self.job_logger.info("Validating data for time series analysis...")
         
         validation_metadata = {}
         
         if self.df is None:
             error_msg = "Data not loaded. Call load_data() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         # Store original data
@@ -101,12 +101,12 @@ class TimeSeriesPipeline(BasePipeline):
         # Check if target column exists
         if self.target is None:
             error_msg = "Target column name must be provided"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         if self.target not in self.df.columns:
             error_msg = f"Target column '{self.target}' not found in data"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         validation_metadata['target_exists'] = True
@@ -114,37 +114,37 @@ class TimeSeriesPipeline(BasePipeline):
         # Check if time column exists
         if self.time_col is None:
             error_msg = "Time column name must be provided"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         if self.time_col not in self.df.columns:
             error_msg = f"Time column '{self.time_col}' not found in data"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         validation_metadata['time_col_exists'] = True
         
         # Check if time column can be converted to datetime
         try:
-            logger.info("Converting time column to datetime")
+            self.job_logger.info("Converting time column to datetime")
             self.df[self.time_col] = pd.to_datetime(self.df[self.time_col])
             validation_metadata['time_col_converted'] = True
         except Exception as e:
             error_msg = f"Could not convert time column '{self.time_col}' to datetime: {str(e)}"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         # Check if target has valid numeric values
         if not pd.api.types.is_numeric_dtype(self.df[self.target]):
             error_msg = f"Target column '{self.target}' must contain numeric values"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         validation_metadata['target_is_numeric'] = True
         
         # Sort by time if not already sorted
         if not self.df[self.time_col].is_monotonic_increasing:
-            logger.warning("Data is not sorted by time. Sorting now.")
+            self.job_logger.warning("Data is not sorted by time. Sorting now.")
             self.df = self.df.sort_values(by=self.time_col)
             validation_metadata['was_sorted'] = True
         else:
@@ -153,7 +153,7 @@ class TimeSeriesPipeline(BasePipeline):
         # Check for duplicate time values
         dup_count = self.df[self.time_col].duplicated().sum()
         if dup_count > 0:
-            logger.warning(f"Found {dup_count} duplicate time values. This may cause issues.")
+            self.job_logger.warning(f"Found {dup_count} duplicate time values. This may cause issues.")
             validation_metadata['duplicate_times'] = int(dup_count)
         else:
             validation_metadata['duplicate_times'] = 0
@@ -161,7 +161,7 @@ class TimeSeriesPipeline(BasePipeline):
         # Check for missing values in target
         missing_in_target = self.df[self.target].isnull().sum()
         if missing_in_target > 0:
-            logger.warning(f"{missing_in_target} missing values found in target column.")
+            self.job_logger.warning(f"{missing_in_target} missing values found in target column.")
             validation_metadata['missing_in_target'] = int(missing_in_target)
         else:
             validation_metadata['missing_in_target'] = 0
@@ -172,10 +172,10 @@ class TimeSeriesPipeline(BasePipeline):
             inferred_freq = pd.infer_freq(df_temp.index)
             if inferred_freq:
                 self.freq = inferred_freq
-                logger.info(f"Inferred frequency: {self.freq}")
+                self.job_logger.info(f"Inferred frequency: {self.freq}")
                 validation_metadata['freq_inferred'] = self.freq
             else:
-                logger.warning("Could not infer frequency. Using 'D' (daily) as default.")
+                self.job_logger.warning("Could not infer frequency. Using 'D' (daily) as default.")
                 self.freq = 'D'
                 validation_metadata['freq_default'] = 'D'
         
@@ -194,23 +194,23 @@ class TimeSeriesPipeline(BasePipeline):
             else:
                 self.seasonal_period = 1  # No seasonality
             
-            logger.info(f"Set seasonal period to {self.seasonal_period} based on frequency '{self.freq}'")
+            self.job_logger.info(f"Set seasonal period to {self.seasonal_period} based on frequency '{self.freq}'")
             validation_metadata['seasonal_period_inferred'] = self.seasonal_period
         
         
-        logger.info("Data validation complete")
+        self.job_logger.info("Data validation complete")
         return True
     
     def preprocess_data(self):
         """
         Preprocess the data for time series analysis.
         """
-        logger.info("Preprocessing data for time series analysis...")
+        self.job_logger.info("Preprocessing data for time series analysis...")
         
         preprocessing_metadata = {}
         
         # Set time column as index
-        logger.info(f"Setting {self.time_col} as index")
+        self.job_logger.info(f"Setting {self.time_col} as index")
         df = self.df.copy()
         df.set_index(self.time_col, inplace=True)
         df.sort_index(inplace=True)
@@ -218,7 +218,7 @@ class TimeSeriesPipeline(BasePipeline):
         # Handle missing values in target
         missing_before = df[self.target].isnull().sum()
         if missing_before > 0:
-            logger.info(f"Handling {missing_before} missing values in target")
+            self.job_logger.info(f"Handling {missing_before} missing values in target")
             # Fill with forward fill, then backward fill
             df[self.target] = df[self.target].fillna(method='ffill').fillna(method='bfill')
             # If still any nulls, fill with mean
@@ -236,7 +236,7 @@ class TimeSeriesPipeline(BasePipeline):
         self.time_series_train = self.time_series.iloc[:train_size].copy()
         self.time_series_test = self.time_series.iloc[train_size:].copy()
         
-        logger.info(f"Split data: {len(self.time_series_train)} training samples, {len(self.time_series_test)} test samples")
+        self.job_logger.info(f"Split data: {len(self.time_series_train)} training samples, {len(self.time_series_test)} test samples")
         preprocessing_metadata['train_size'] = len(self.time_series_train)
         preprocessing_metadata['test_size'] = len(self.time_series_test)
         
@@ -255,7 +255,7 @@ class TimeSeriesPipeline(BasePipeline):
         df_features = df_features.dropna()
         rows_after = df_features.shape[0]
         rows_dropped = rows_before - rows_after
-        logger.info(f"Dropped {rows_dropped} rows with NaN values from feature extraction")
+        self.job_logger.info(f"Dropped {rows_dropped} rows with NaN values from feature extraction")
         
         # Split features into train/test
         train_features = df_features.iloc[:train_size].copy()
@@ -263,7 +263,7 @@ class TimeSeriesPipeline(BasePipeline):
         
         # Scale features if needed
         if self.scale_method != 'none':
-            logger.info(f"Scaling features using {self.scale_method} method")
+            self.job_logger.info(f"Scaling features using {self.scale_method} method")
             
             if self.scale_method == 'minmax':
                 self.scaler = MinMaxScaler()
@@ -288,7 +288,7 @@ class TimeSeriesPipeline(BasePipeline):
         self.X_test = test_features.drop(columns=[self.target])
         self.y_test = test_features[self.target]
         
-        logger.info(f"Final features shape: X_train={self.X_train.shape}, X_test={self.X_test.shape}")
+        self.job_logger.info(f"Final features shape: X_train={self.X_train.shape}, X_test={self.X_test.shape}")
         preprocessing_metadata['X_train_shape'] = list(self.X_train.shape)
         preprocessing_metadata['X_test_shape'] = list(self.X_test.shape)
         
@@ -300,7 +300,7 @@ class TimeSeriesPipeline(BasePipeline):
             freq=self.freq
         )
         
-        logger.info(f"Prepared {len(self.forecast_dates)} forecast dates")
+        self.job_logger.info(f"Prepared {len(self.forecast_dates)} forecast dates")
         preprocessing_metadata['forecast_dates'] = {
             'start': self.forecast_dates[0].strftime('%Y-%m-%d'),
             'end': self.forecast_dates[-1].strftime('%Y-%m-%d'),
@@ -316,7 +316,7 @@ class TimeSeriesPipeline(BasePipeline):
         """
         Train multiple time series forecasting models.
         """
-        logger.info("Training time series forecasting models...")
+        self.job_logger.info("Training time series forecasting models...")
         
         training_metadata = {'models': {}}
         
@@ -334,7 +334,7 @@ class TimeSeriesPipeline(BasePipeline):
         # Train ML models
         for name, model in ml_models.items():
             try:
-                logger.info(f"Training {name} model...")
+                self.job_logger.info(f"Training {name} model...")
                 model_start = datetime.now()
                 
                 # Train model
@@ -397,10 +397,10 @@ class TimeSeriesPipeline(BasePipeline):
                     'training_time_seconds': model_time
                 }
                 
-                logger.info(f"{name} training completed in {model_time:.2f} seconds")
+                self.job_logger.info(f"{name} training completed in {model_time:.2f} seconds")
                 
             except Exception as e:
-                logger.error(f"Error training {name} model: {str(e)}", exc_info=True)
+                self.job_logger.error(f"Error training {name} model: {str(e)}", exc_info=True)
                 training_metadata['models'][name] = {
                     'trained_successfully': False,
                     'error': str(e)
@@ -408,7 +408,7 @@ class TimeSeriesPipeline(BasePipeline):
         
         # Try ARIMA for time series tasks
         try:
-            logger.info("Training ARIMA model...")
+            self.job_logger.info("Training ARIMA model...")
             model_start = datetime.now()
             
             # Simple model with defaults
@@ -450,10 +450,10 @@ class TimeSeriesPipeline(BasePipeline):
                 'training_time_seconds': model_time
             }
             
-            logger.info(f"ARIMA training completed in {model_time:.2f} seconds")
+            self.job_logger.info(f"ARIMA training completed in {model_time:.2f} seconds")
             
         except Exception as e:
-            logger.error(f"Error training ARIMA model: {str(e)}", exc_info=True)
+            self.job_logger.error(f"Error training ARIMA model: {str(e)}", exc_info=True)
             training_metadata['models']['ARIMA'] = {
                 'trained_successfully': False,
                 'error': str(e)
@@ -463,7 +463,7 @@ class TimeSeriesPipeline(BasePipeline):
         training_metadata['n_models_trained'] = len(self.models)
         self.metadata['models']['training'] = training_metadata
         
-        logger.info(f"Trained {len(self.models)} time series models")
+        self.job_logger.info(f"Trained {len(self.models)} time series models")
         
         return self.models
     
@@ -473,10 +473,10 @@ class TimeSeriesPipeline(BasePipeline):
         """
         if not self.models:
             error_msg = "No trained models. Call train_models() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
-        logger.info("Evaluating time series models...")
+        self.job_logger.info("Evaluating time series models...")
         
         evaluation_metadata = {}
         
@@ -512,8 +512,8 @@ class TimeSeriesPipeline(BasePipeline):
         # Update metadata
         self.metadata['evaluation'] = evaluation_metadata
         
-        logger.info(f"Best model: {best_model_name}")
-        logger.info(f"Best model test RMSE: {self.results.iloc[0]['test_rmse']:.4f}")
+        self.job_logger.info(f"Best model: {best_model_name}")
+        self.job_logger.info(f"Best model test RMSE: {self.results.iloc[0]['test_rmse']:.4f}")
         
         return self.results
     
@@ -523,10 +523,10 @@ class TimeSeriesPipeline(BasePipeline):
         """
         if self.best_model is None:
             error_msg = "No best model selected. Call evaluate_models() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
-        logger.info("Saving best model and pipeline components...")
+        self.job_logger.info("Saving best model and pipeline components...")
         
         model_metadata = {}
         
@@ -561,7 +561,7 @@ class TimeSeriesPipeline(BasePipeline):
         # Update metadata
         self.metadata['best_model'].update(model_metadata)
         
-        logger.info(f"Time series model saved to {model_filename}")
+        self.job_logger.info(f"Time series model saved to {model_filename}")
         
         return model_filename
 
@@ -569,34 +569,34 @@ class TimeSeriesPipeline(BasePipeline):
         """
         Run the complete pipeline.
         """
-        logger.info("Starting time series pipeline...")
+        self.job_logger.info("Starting time series pipeline...")
         pipeline_start = datetime.now()
         
         try:
             # Load and validate data
-            logger.info("\nLoading and validating data...")
+            self.job_logger.info("\nLoading and validating data...")
             self.load_data()
             self.validate_data()
             
             # Preprocess data
-            logger.info("\nPreprocessing data...")
+            self.job_logger.info("\nPreprocessing data...")
             self.preprocess_data()
             
             # Train models
-            logger.info("\nTraining models...")
+            self.job_logger.info("\nTraining models...")
             self.train_models()
             
             # Evaluate models
-            logger.info("\nEvaluating models...")
+            self.job_logger.info("\nEvaluating models...")
             self.evaluate_models()
             
             # Save the best model
-            logger.info("\nSaving model...")
+            self.job_logger.info("\nSaving model...")
             self.save_model()
             
             # Calculate total runtime
             pipeline_runtime = (datetime.now() - pipeline_start).total_seconds()
-            logger.info(f"\nPipeline completed in {pipeline_runtime:.2f} seconds!")
+            self.job_logger.info(f"\nPipeline completed in {pipeline_runtime:.2f} seconds!")
             
             # Final metadata updates
             self.metadata['runtime_seconds'] = pipeline_runtime
@@ -606,7 +606,7 @@ class TimeSeriesPipeline(BasePipeline):
             return self.best_model, self.results
             
         except Exception as e:
-            logger.error(f"Error in pipeline: {str(e)}", exc_info=True)
+            self.job_logger.error(f"Error in pipeline: {str(e)}", exc_info=True)
             
             # Update metadata with error information
             self.metadata['status'] = 'failed'

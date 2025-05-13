@@ -37,14 +37,15 @@ class RegressionPipeline(BasePipeline):
             custom_features_function: Optional function for feature engineering
             **kwargs: Other arguments passed to parent class
         """
-        logger.info("Initializing Regression Pipeline...")
+        super().__init__(**kwargs)
+        self.job_logger.info("Initializing Regression Pipeline...")
         init_start_time = datetime.now()
         
         # Log input arguments except for df
         log_kwargs = {k: v for k, v in kwargs.items() if k != 'df'}
-        logger.debug(f"Initialization parameters: {log_kwargs}")
+        self.job_logger.debug(f"Initialization parameters: {log_kwargs}")
         
-        super().__init__(**kwargs)
+        
         self.problem_type = 'regression'
         
         # Get regression-specific configuration
@@ -55,30 +56,30 @@ class RegressionPipeline(BasePipeline):
         # Log configuration details
         if self.model_config:
             enabled_models = self.model_config.get('models', {}).get('enabled', [])
-            logger.debug(f"Loaded regression configuration in {config_time:.2f} seconds")
-            logger.debug(f"Enabled models: {enabled_models}")
+            self.job_logger.debug(f"Loaded regression configuration in {config_time:.2f} seconds")
+            self.job_logger.debug(f"Enabled models: {enabled_models}")
             
             # Log random search configuration if it exists
             if 'random_search' in self.model_config and self.model_config['random_search'].get('enabled', False):
                 rs_config = self.model_config['random_search']
-                logger.debug(f"Random search enabled: {rs_config.get('n_iter', 20)} iterations, {rs_config.get('cv', 5)}-fold CV")
+                self.job_logger.debug(f"Random search enabled: {rs_config.get('n_iter', 20)} iterations, {rs_config.get('cv', 5)}-fold CV")
                 
             # Log evaluation metrics
             eval_config = self.model_config.get('evaluation', {})
             metrics = eval_config.get('metrics', ['r2', 'rmse', 'mae'])
             primary_metric = eval_config.get('primary_metric', 'r2')
-            logger.debug(f"Evaluation metrics: {metrics}, primary: {primary_metric}")
+            self.job_logger.debug(f"Evaluation metrics: {metrics}, primary: {primary_metric}")
         else:
-            logger.warning("No regression-specific configuration found, using defaults")
+            self.job_logger.warning("No regression-specific configuration found, using defaults")
         
         # Log DataFrame summary if provided
         if 'df' in kwargs and kwargs['df'] is not None:
             df = kwargs['df']
-            logger.debug(f"DataFrame provided: {df.shape[0]:,} rows, {df.shape[1]:,} columns")
+            self.job_logger.debug(f"DataFrame provided: {df.shape[0]:,} rows, {df.shape[1]:,} columns")
             
             # Log data types summary
             dtype_counts = df.dtypes.value_counts().to_dict()
-            logger.debug(f"DataFrame column types: {dtype_counts}")
+            self.job_logger.debug(f"DataFrame column types: {dtype_counts}")
             
             # Log target column info if provided
             if 'target' in kwargs and kwargs['target'] is not None:
@@ -87,14 +88,14 @@ class RegressionPipeline(BasePipeline):
                     # Basic target statistics
                     if pd.api.types.is_numeric_dtype(df[target]):
                         target_stats = df[target].describe()
-                        logger.debug(f"Target column '{target}' statistics: min={target_stats['min']:.4g}, max={target_stats['max']:.4g}, mean={target_stats['mean']:.4g}")
+                        self.job_logger.debug(f"Target column '{target}' statistics: min={target_stats['min']:.4g}, max={target_stats['max']:.4g}, mean={target_stats['mean']:.4g}")
                     else:
-                        logger.warning(f"Target column '{target}' is not numeric: {df[target].dtype}")
+                        self.job_logger.warning(f"Target column '{target}' is not numeric: {df[target].dtype}")
                 else:
-                    logger.warning(f"Target column '{target}' not found in DataFrame columns")
+                    self.job_logger.warning(f"Target column '{target}' not found in DataFrame columns")
         
         init_time = (datetime.now() - init_start_time).total_seconds()
-        logger.info(f"Regression Pipeline initialized in {init_time:.2f} seconds")
+        self.job_logger.info(f"Regression Pipeline initialized in {init_time:.2f} seconds")
         
         # Log memory usage if psutil is available
         try:
@@ -102,9 +103,9 @@ class RegressionPipeline(BasePipeline):
             process = psutil.Process(os.getpid())
             memory_info = process.memory_info()
             memory_mb = memory_info.rss / (1024 * 1024)
-            logger.debug(f"Memory usage after initialization: {memory_mb:.2f} MB")
+            self.job_logger.debug(f"Memory usage after initialization: {memory_mb:.2f} MB")
         except ImportError:
-            logger.debug("psutil not available for memory monitoring")
+            self.job_logger.debug("psutil not available for memory monitoring")
     
     def validate_data(self) -> bool:
         """
@@ -113,73 +114,73 @@ class RegressionPipeline(BasePipeline):
         Returns:
             bool: True if validation passes
         """
-        logger.info("Validating data for regression...")
+        self.job_logger.info("Validating data for regression...")
         validation_start_time = datetime.now()
         
         if self.df is None:
             error_msg = "Data not loaded. Call load_data() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         if self.target is None:
             error_msg = "Target column name must be provided"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         # Data overview
-        logger.debug(f"DataFrame shape: {self.df.shape[0]:,} rows, {self.df.shape[1]:,} columns")
-        logger.debug(f"Target column: '{self.target}'")
+        self.job_logger.debug(f"DataFrame shape: {self.df.shape[0]:,} rows, {self.df.shape[1]:,} columns")
+        self.job_logger.debug(f"Target column: '{self.target}'")
         
         # Validation checks
         validation_results = {}
         
         # Check if target column exists
-        logger.debug(f"Checking if target column '{self.target}' exists in data...")
+        self.job_logger.debug(f"Checking if target column '{self.target}' exists in data...")
         if self.target not in self.df.columns:
             error_msg = f"Target column '{self.target}' not found in data"
-            logger.error(error_msg)
-            logger.debug(f"Available columns: {list(self.df.columns)}")
+            self.job_logger.error(error_msg)
+            self.job_logger.debug(f"Available columns: {list(self.df.columns)}")
             raise ValueError(error_msg)
         
         validation_results['target_exists'] = True
-        logger.debug(f"Target column '{self.target}' exists in data ✓")
+        self.job_logger.debug(f"Target column '{self.target}' exists in data ✓")
         
         # Check if dataset is empty
-        logger.debug("Checking if dataset is empty...")
+        self.job_logger.debug("Checking if dataset is empty...")
         if len(self.df) == 0:
             error_msg = "Dataset is empty"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         validation_results['dataset_not_empty'] = True
-        logger.debug(f"Dataset is not empty, contains {len(self.df):,} rows ✓")
+        self.job_logger.debug(f"Dataset is not empty, contains {len(self.df):,} rows ✓")
         
         # Check if target has valid numeric values
-        logger.debug(f"Checking if target column '{self.target}' contains numeric values...")
+        self.job_logger.debug(f"Checking if target column '{self.target}' contains numeric values...")
         if not pd.api.types.is_numeric_dtype(self.df[self.target]):
             error_msg = f"Target column '{self.target}' must contain numeric values for regression"
-            logger.error(error_msg)
-            logger.debug(f"Target data type: {self.df[self.target].dtype}")
+            self.job_logger.error(error_msg)
+            self.job_logger.debug(f"Target data type: {self.df[self.target].dtype}")
             # Try to provide example values
             try:
                 examples = self.df[self.target].head(3).tolist()
-                logger.debug(f"Example values: {examples}")
+                self.job_logger.debug(f"Example values: {examples}")
             except:
                 pass
             raise ValueError(error_msg)
         
         validation_results['target_is_numeric'] = True
-        logger.debug(f"Target column '{self.target}' contains numeric values ✓")
+        self.job_logger.debug(f"Target column '{self.target}' contains numeric values ✓")
         
         # Check for at least some valid values in target
-        logger.debug("Checking for valid values in target column...")
+        self.job_logger.debug("Checking for valid values in target column...")
         if self.df[self.target].isna().all():
             error_msg = f"Target column '{self.target}' contains only NaN values"
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         validation_results['target_has_values'] = True
-        logger.debug("Target column contains valid values ✓")
+        self.job_logger.debug("Target column contains valid values ✓")
         
         # Additional checks
         # Number of missing values in target
@@ -189,12 +190,12 @@ class RegressionPipeline(BasePipeline):
         validation_results['missing_in_target_pct'] = float(missing_pct)
         
         if missing_in_target > 0:
-            logger.warning(f"Missing values in target: {missing_in_target:,} ({missing_pct:.2f}% of rows)")
+            self.job_logger.warning(f"Missing values in target: {missing_in_target:,} ({missing_pct:.2f}% of rows)")
         else:
-            logger.debug("No missing values in target ✓")
+            self.job_logger.debug("No missing values in target ✓")
         
         # Feature analysis
-        logger.debug("Analyzing features for regression...")
+        self.job_logger.debug("Analyzing features for regression...")
         
         # Check for numeric features
         numeric_cols = self.df.select_dtypes(include=['number']).columns.tolist()
@@ -202,9 +203,9 @@ class RegressionPipeline(BasePipeline):
         validation_results['numeric_feature_count'] = len(numeric_cols)
         
         if len(numeric_cols) == 0:
-            logger.warning("No numeric features found (excluding target)")
+            self.job_logger.warning("No numeric features found (excluding target)")
         else:
-            logger.debug(f"Found {len(numeric_cols):,} numeric features")
+            self.job_logger.debug(f"Found {len(numeric_cols):,} numeric features")
             
             # Check for missing values in numeric features
             numeric_missing = self.df[numeric_cols].isna().sum().sum()
@@ -213,20 +214,20 @@ class RegressionPipeline(BasePipeline):
             validation_results['numeric_features_missing_pct'] = float(numeric_missing_pct)
             
             if numeric_missing > 0:
-                logger.debug(f"Missing values in numeric features: {numeric_missing:,} ({numeric_missing_pct:.2f}% of cells)")
+                self.job_logger.debug(f"Missing values in numeric features: {numeric_missing:,} ({numeric_missing_pct:.2f}% of cells)")
                 
                 # Report columns with highest missing percentages
                 missing_by_col = self.df[numeric_cols].isna().mean() * 100
                 high_missing = missing_by_col[missing_by_col > 25].sort_values(ascending=False)
                 if not high_missing.empty:
-                    logger.warning(f"Features with >25% missing values: {dict(high_missing)}")
+                    self.job_logger.warning(f"Features with >25% missing values: {dict(high_missing)}")
         
         # Check for categorical features
         cat_cols = self.df.select_dtypes(include=['object', 'category']).columns.tolist()
         validation_results['categorical_feature_count'] = len(cat_cols)
         
         if len(cat_cols) > 0:
-            logger.debug(f"Found {len(cat_cols):,} categorical features")
+            self.job_logger.debug(f"Found {len(cat_cols):,} categorical features")
             
             # Check cardinality of categorical features
             high_cardinality_cols = []
@@ -236,7 +237,7 @@ class RegressionPipeline(BasePipeline):
                     high_cardinality_cols.append((col, nunique))
             
             if high_cardinality_cols:
-                logger.warning(f"High cardinality categorical features: {high_cardinality_cols}")
+                self.job_logger.warning(f"High cardinality categorical features: {high_cardinality_cols}")
                 validation_results['high_cardinality_features'] = [{"column": col, "unique_values": n} for col, n in high_cardinality_cols]
         
         # Target distribution statistics
@@ -256,12 +257,12 @@ class RegressionPipeline(BasePipeline):
         validation_results['target_outliers_pct'] = float(outliers_pct)
         
         if outliers_pct > 5:
-            logger.warning(f"Target contains {outliers_count:,} outliers ({outliers_pct:.2f}% of data)")
-            logger.debug(f"Target outlier bounds: lower={lower_bound:.4g}, upper={upper_bound:.4g}")
+            self.job_logger.warning(f"Target contains {outliers_count:,} outliers ({outliers_pct:.2f}% of data)")
+            self.job_logger.debug(f"Target outlier bounds: lower={lower_bound:.4g}, upper={upper_bound:.4g}")
         
         validation_time = (datetime.now() - validation_start_time).total_seconds()
-        logger.info(f"Data validation complete in {validation_time:.2f} seconds")
-        logger.info(f"Target column '{self.target}' summary: Min={target_stats['min']:.4g}, Max={target_stats['max']:.4g}, Mean={target_stats['mean']:.4g}, Std={target_stats['std']:.4g}")
+        self.job_logger.info(f"Data validation complete in {validation_time:.2f} seconds")
+        self.job_logger.info(f"Target column '{self.target}' summary: Min={target_stats['min']:.4g}, Max={target_stats['max']:.4g}, Mean={target_stats['mean']:.4g}, Std={target_stats['std']:.4g}")
         
         return True
     
@@ -272,37 +273,37 @@ class RegressionPipeline(BasePipeline):
         Returns:
             tuple: (X_train, X_test, y_train, y_test)
         """
-        logger.info("Preprocessing data for regression...")
+        self.job_logger.info("Preprocessing data for regression...")
         preprocess_start_time = datetime.now()
         
         # Log start of preprocessing
-        logger.debug(f"DataFrame shape before preprocessing: {self.df.shape[0]:,} rows, {self.df.shape[1]:,} columns")
+        self.job_logger.debug(f"DataFrame shape before preprocessing: {self.df.shape[0]:,} rows, {self.df.shape[1]:,} columns")
         
         # Call the parent class method with custom feature engineering if provided
         X_train, X_test, y_train, y_test = super().preprocess_data()
         
         # Log additional regression-specific preprocessing information
-        logger.debug(f"Train set: {X_train.shape[0]:,} rows ({X_train.shape[0]/self.df.shape[0]*100:.1f}% of data)")
-        logger.debug(f"Test set: {X_test.shape[0]:,} rows ({X_test.shape[0]/self.df.shape[0]*100:.1f}% of data)")
+        self.job_logger.debug(f"Train set: {X_train.shape[0]:,} rows ({X_train.shape[0]/self.df.shape[0]*100:.1f}% of data)")
+        self.job_logger.debug(f"Test set: {X_test.shape[0]:,} rows ({X_test.shape[0]/self.df.shape[0]*100:.1f}% of data)")
         
         # Log target distribution in train and test sets
         train_target_stats = pd.Series(y_train).describe().to_dict()
         test_target_stats = pd.Series(y_test).describe().to_dict()
         
-        logger.debug("Target distribution in train set:")
-        logger.debug(f"  Min: {train_target_stats['min']:.4g}, Max: {train_target_stats['max']:.4g}")
-        logger.debug(f"  Mean: {train_target_stats['mean']:.4g}, Std: {train_target_stats['std']:.4g}")
-        logger.debug(f"  25%: {train_target_stats['25%']:.4g}, 50%: {train_target_stats['50%']:.4g}, 75%: {train_target_stats['75%']:.4g}")
+        self.job_logger.debug("Target distribution in train set:")
+        self.job_logger.debug(f"  Min: {train_target_stats['min']:.4g}, Max: {train_target_stats['max']:.4g}")
+        self.job_logger.debug(f"  Mean: {train_target_stats['mean']:.4g}, Std: {train_target_stats['std']:.4g}")
+        self.job_logger.debug(f"  25%: {train_target_stats['25%']:.4g}, 50%: {train_target_stats['50%']:.4g}, 75%: {train_target_stats['75%']:.4g}")
         
-        logger.debug("Target distribution in test set:")
-        logger.debug(f"  Min: {test_target_stats['min']:.4g}, Max: {test_target_stats['max']:.4g}")
-        logger.debug(f"  Mean: {test_target_stats['mean']:.4g}, Std: {test_target_stats['std']:.4g}")
-        logger.debug(f"  25%: {test_target_stats['25%']:.4g}, 50%: {test_target_stats['50%']:.4g}, 75%: {test_target_stats['75%']:.4g}")
+        self.job_logger.debug("Target distribution in test set:")
+        self.job_logger.debug(f"  Min: {test_target_stats['min']:.4g}, Max: {test_target_stats['max']:.4g}")
+        self.job_logger.debug(f"  Mean: {test_target_stats['mean']:.4g}, Std: {test_target_stats['std']:.4g}")
+        self.job_logger.debug(f"  25%: {test_target_stats['25%']:.4g}, 50%: {test_target_stats['50%']:.4g}, 75%: {test_target_stats['75%']:.4g}")
         
         # Check if distributions are similar
         mean_diff_pct = abs(train_target_stats['mean'] - test_target_stats['mean']) / train_target_stats['mean'] * 100
         if mean_diff_pct > 10:  # Arbitrary threshold
-            logger.warning(f"Train and test set means differ by {mean_diff_pct:.2f}%, which may indicate data leakage or poor splitting")
+            self.job_logger.warning(f"Train and test set means differ by {mean_diff_pct:.2f}%, which may indicate data leakage or poor splitting")
         
         # Check for feature correlation with target
         try:
@@ -310,14 +311,14 @@ class RegressionPipeline(BasePipeline):
             if hasattr(self.preprocessor, 'get_feature_names_out'):
                 try:
                     feature_names = self.preprocessor.get_feature_names_out()
-                    logger.debug(f"Preprocessor outputs {len(feature_names)} features")
+                    self.job_logger.debug(f"Preprocessor outputs {len(feature_names)} features")
                 except:
-                    logger.debug("Could not get feature names from preprocessor")
+                    self.job_logger.debug("Could not get feature names from preprocessor")
         except Exception as e:
-            logger.debug(f"Error checking preprocessor features: {str(e)}")
+            self.job_logger.debug(f"Error checking preprocessor features: {str(e)}")
         
         preprocess_time = (datetime.now() - preprocess_start_time).total_seconds()
-        logger.info(f"Data preprocessing for regression completed in {preprocess_time:.2f} seconds")
+        self.job_logger.info(f"Data preprocessing for regression completed in {preprocess_time:.2f} seconds")
         
         # Add more details to metadata
         if 'preprocessing' not in self.metadata:
@@ -341,39 +342,39 @@ class RegressionPipeline(BasePipeline):
         """
         from sklearn.model_selection import RandomizedSearchCV
         
-        logger.info("Training regression models...")
+        self.job_logger.info("Training regression models...")
         train_start_time = datetime.now()
         
         if self.preprocessor is None:
             error_msg = "Data not preprocessed. Call preprocess_data() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
         # Log training dimensions
-        logger.debug(f"Training data dimensions - X_train: {self.X_train.shape}, y_train: {self.y_train.shape}")
+        self.job_logger.debug(f"Training data dimensions - X_train: {self.X_train.shape}, y_train: {self.y_train.shape}")
         
         training_metadata = {'models': {}}
         
         # Process training data once
-        logger.info("Preprocessing training data...")
+        self.job_logger.info("Preprocessing training data...")
         preprocess_start = datetime.now()
         X_train_processed = self.preprocessor.transform(self.X_train)
         preprocess_time = (datetime.now() - preprocess_start).total_seconds()
-        logger.debug(f"Training data preprocessing completed in {preprocess_time:.2f} seconds")
-        logger.debug(f"Processed training data shape: {X_train_processed.shape}")
+        self.job_logger.debug(f"Training data preprocessing completed in {preprocess_time:.2f} seconds")
+        self.job_logger.debug(f"Processed training data shape: {X_train_processed.shape}")
         
         # Check for sparse data
         is_sparse = hasattr(X_train_processed, 'toarray') and callable(getattr(X_train_processed, 'toarray'))
         if is_sparse:
             sparsity = 1.0 - (X_train_processed.nnz / (X_train_processed.shape[0] * X_train_processed.shape[1]))
-            logger.debug(f"Processed data is sparse with sparsity {sparsity:.2%}")
+            self.job_logger.debug(f"Processed data is sparse with sparsity {sparsity:.2%}")
         
         # Get model configurations from config
         model_params = self.model_config.get('models', {}).get('parameters', {})
         enabled_models = self.model_config.get('models', {}).get('enabled', [])
         
-        logger.debug(f"Model parameters from config: {model_params}")
-        logger.debug(f"Enabled models: {enabled_models}")
+        self.job_logger.debug(f"Model parameters from config: {model_params}")
+        self.job_logger.debug(f"Enabled models: {enabled_models}")
         
         # Define all available regressors
         all_regressors = {
@@ -403,20 +404,20 @@ class RegressionPipeline(BasePipeline):
         
         # Log model configurations
         for name, model in all_regressors.items():
-            logger.debug(f"Model {name} configuration: {model.get_params()}")
+            self.job_logger.debug(f"Model {name} configuration: {model.get_params()}")
         
         # Filter by enabled models if specified
         regressors = {k: v for k, v in all_regressors.items() if k in enabled_models}
-        logger.info(f"Training {len(regressors)} models: {', '.join(regressors.keys())}")
+        self.job_logger.info(f"Training {len(regressors)} models: {', '.join(regressors.keys())}")
         
         # Check if random search is enabled
         random_search_config = self.model_config.get('random_search', {})
         use_random_search = random_search_config.get('enabled', False)
         
         if use_random_search:
-            logger.info(f"Random search optimization is enabled with {random_search_config.get('n_iter', 20)} iterations")
+            self.job_logger.info(f"Random search optimization is enabled with {random_search_config.get('n_iter', 20)} iterations")
         else:
-            logger.debug("Random search optimization is disabled")
+            self.job_logger.debug("Random search optimization is disabled")
         
         # Train all models
         self.models = {}
@@ -424,7 +425,7 @@ class RegressionPipeline(BasePipeline):
         # First, train models with regular parameters
         for name, regressor in regressors.items():
             try:
-                logger.info(f"Training {name}...")
+                self.job_logger.info(f"Training {name}...")
                 model_metadata = {
                     'model_type': str(type(regressor)),
                     'parameters': str(regressor.get_params())
@@ -435,7 +436,7 @@ class RegressionPipeline(BasePipeline):
                     import psutil
                     process = psutil.Process(os.getpid())
                     memory_before = process.memory_info().rss / (1024 * 1024)
-                    logger.debug(f"Memory before training {name}: {memory_before:.2f} MB")
+                    self.job_logger.debug(f"Memory before training {name}: {memory_before:.2f} MB")
                 except ImportError:
                     pass
                 
@@ -445,7 +446,7 @@ class RegressionPipeline(BasePipeline):
                 model = regressor.fit(X_train_processed, self.y_train)
                 
                 train_time = (datetime.now() - train_start).total_seconds()
-                logger.info(f"Training {name} completed in {train_time:.2f} seconds")
+                self.job_logger.info(f"Training {name} completed in {train_time:.2f} seconds")
                 
                 # Log memory after training
                 try:
@@ -453,7 +454,7 @@ class RegressionPipeline(BasePipeline):
                     process = psutil.Process(os.getpid())
                     memory_after = process.memory_info().rss / (1024 * 1024)
                     memory_diff = memory_after - memory_before
-                    logger.debug(f"Memory after training {name}: {memory_after:.2f} MB (change: {memory_diff:+.2f} MB)")
+                    self.job_logger.debug(f"Memory after training {name}: {memory_after:.2f} MB (change: {memory_diff:+.2f} MB)")
                 except ImportError:
                     pass
                 
@@ -461,10 +462,10 @@ class RegressionPipeline(BasePipeline):
                 if hasattr(model, 'feature_importances_'):
                     top_importances = sorted(zip(range(X_train_processed.shape[1]), model.feature_importances_), 
                                            key=lambda x: x[1], reverse=True)[:10]
-                    logger.debug(f"Top feature importances for {name}:")
+                    self.job_logger.debug(f"Top feature importances for {name}:")
                     for idx, importance in top_importances:
                         feature_name = f"Feature_{idx}"
-                        logger.debug(f"  - {feature_name}: {importance:.4f}")
+                        self.job_logger.debug(f"  - {feature_name}: {importance:.4f}")
                     
                     model_metadata['feature_importances'] = {f"Feature_{i}": float(imp) for i, imp in top_importances}
                 
@@ -481,16 +482,16 @@ class RegressionPipeline(BasePipeline):
                     complexity_metrics = self._get_model_complexity_metrics(model)
                     if complexity_metrics:
                         model_metadata['complexity_metrics'] = complexity_metrics
-                        logger.debug(f"Model complexity metrics for {name}: {complexity_metrics}")
+                        self.job_logger.debug(f"Model complexity metrics for {name}: {complexity_metrics}")
                 except Exception as e:
-                    logger.debug(f"Could not calculate complexity metrics for {name}: {str(e)}")
+                    self.job_logger.debug(f"Could not calculate complexity metrics for {name}: {str(e)}")
                 
                 training_metadata['models'][name] = model_metadata
                 
             except Exception as e:
                 error_msg = f"Failed to train {name}: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                logger.debug(f"Traceback: {traceback.format_exc()}")
+                self.job_logger.error(error_msg, exc_info=True)
+                self.job_logger.debug(f"Traceback: {traceback.format_exc()}")
                 training_metadata['models'][name] = {
                     'trained_successfully': False,
                     'error': str(e),
@@ -499,19 +500,19 @@ class RegressionPipeline(BasePipeline):
         
         # Next, apply Random Search optimization if enabled
         if use_random_search:
-            logger.info("Starting Random Search optimization...")
+            self.job_logger.info("Starting Random Search optimization...")
             n_iter = random_search_config.get('n_iter', 20)
             cv = random_search_config.get('cv', 5)
             verbose = random_search_config.get('verbose', 1)
             rs_models_config = random_search_config.get('models', {})
             
-            logger.debug(f"Random Search configuration: n_iter={n_iter}, cv={cv}, verbose={verbose}")
-            logger.debug(f"Models to optimize: {list(rs_models_config.keys())}")
+            self.job_logger.debug(f"Random Search configuration: n_iter={n_iter}, cv={cv}, verbose={verbose}")
+            self.job_logger.debug(f"Models to optimize: {list(rs_models_config.keys())}")
             
             # Apply Random Search to configured models
             for model_name, model_config in rs_models_config.items():
                 if model_config.get('enabled', False) and model_name in regressors:
-                    logger.info(f"Performing Random Search optimization for {model_name}")
+                    self.job_logger.info(f"Performing Random Search optimization for {model_name}")
                     
                     # Get base model
                     base_model = regressors[model_name]
@@ -521,14 +522,14 @@ class RegressionPipeline(BasePipeline):
                     
                     # Verify param_distributions is suitable for RandomizedSearchCV
                     if not param_distributions:
-                        logger.warning(f"No parameter distributions defined for {model_name}, skipping Random Search")
+                        self.job_logger.warning(f"No parameter distributions defined for {model_name}, skipping Random Search")
                         continue
                     
-                    logger.debug(f"Parameter distributions for {model_name}: {param_distributions}")
+                    self.job_logger.debug(f"Parameter distributions for {model_name}: {param_distributions}")
                     
                     try:
                         # Create RandomizedSearchCV
-                        logger.debug(f"Creating RandomizedSearchCV for {model_name}")
+                        self.job_logger.debug(f"Creating RandomizedSearchCV for {model_name}")
                         random_search = RandomizedSearchCV(
                             base_model,
                             param_distributions=param_distributions,
@@ -543,14 +544,14 @@ class RegressionPipeline(BasePipeline):
                         # Time the optimization
                         train_start = datetime.now()
                         
-                        logger.info(f"Starting Random Search for {model_name} with {n_iter} iterations and {cv}-fold CV")
+                        self.job_logger.info(f"Starting Random Search for {model_name} with {n_iter} iterations and {cv}-fold CV")
                         
                         # Log memory before optimization
                         try:
                             import psutil
                             process = psutil.Process(os.getpid())
                             memory_before = process.memory_info().rss / (1024 * 1024)
-                            logger.debug(f"Memory before Random Search for {model_name}: {memory_before:.2f} MB")
+                            self.job_logger.debug(f"Memory before Random Search for {model_name}: {memory_before:.2f} MB")
                         except ImportError:
                             pass
                         
@@ -563,7 +564,7 @@ class RegressionPipeline(BasePipeline):
                             process = psutil.Process(os.getpid())
                             memory_after = process.memory_info().rss / (1024 * 1024)
                             memory_diff = memory_after - memory_before
-                            logger.debug(f"Memory after Random Search for {model_name}: {memory_after:.2f} MB (change: {memory_diff:+.2f} MB)")
+                            self.job_logger.debug(f"Memory after Random Search for {model_name}: {memory_after:.2f} MB (change: {memory_diff:+.2f} MB)")
                         except ImportError:
                             pass
                         
@@ -573,32 +574,32 @@ class RegressionPipeline(BasePipeline):
                         
                         # Calculate training time
                         train_time = (datetime.now() - train_start).total_seconds()
-                        logger.info(f"Random Search for {model_name} completed in {train_time:.2f} seconds")
-                        logger.info(f"Best parameters: {random_search.best_params_}")
+                        self.job_logger.info(f"Random Search for {model_name} completed in {train_time:.2f} seconds")
+                        self.job_logger.info(f"Best parameters: {random_search.best_params_}")
                         
                         # Log the best score
                         best_mse = -random_search.best_score_
                         best_rmse = np.sqrt(best_mse)
-                        logger.info(f"Best CV score (RMSE): {best_rmse:.4f}")
+                        self.job_logger.info(f"Best CV score (RMSE): {best_rmse:.4f}")
                         
                         # Log all CV results
                         cv_results = pd.DataFrame(random_search.cv_results_)
                         best_index = random_search.best_index_
-                        logger.debug(f"CV results summary:")
-                        logger.debug(f"  - Mean test score: {cv_results['mean_test_score'].mean()}")
-                        logger.debug(f"  - Std test score: {cv_results['std_test_score'].mean()}")
-                        logger.debug(f"  - Min test score: {cv_results['mean_test_score'].min()}")
-                        logger.debug(f"  - Max test score: {cv_results['mean_test_score'].max()}")
+                        self.job_logger.debug(f"CV results summary:")
+                        self.job_logger.debug(f"  - Mean test score: {cv_results['mean_test_score'].mean()}")
+                        self.job_logger.debug(f"  - Std test score: {cv_results['std_test_score'].mean()}")
+                        self.job_logger.debug(f"  - Min test score: {cv_results['mean_test_score'].min()}")
+                        self.job_logger.debug(f"  - Max test score: {cv_results['mean_test_score'].max()}")
                         
                         # Log feature importances if available
                         if hasattr(random_search.best_estimator_, 'feature_importances_'):
                             top_importances = sorted(zip(range(X_train_processed.shape[1]), 
                                                       random_search.best_estimator_.feature_importances_), 
                                                    key=lambda x: x[1], reverse=True)[:10]
-                            logger.debug(f"Top feature importances for optimized {model_name}:")
+                            self.job_logger.debug(f"Top feature importances for optimized {model_name}:")
                             for idx, importance in top_importances:
                                 feature_name = f"Feature_{idx}"
-                                logger.debug(f"  - {feature_name}: {importance:.4f}")
+                                self.job_logger.debug(f"  - {feature_name}: {importance:.4f}")
                         
                         # Update metadata
                         optimized_metadata = {
@@ -631,14 +632,14 @@ class RegressionPipeline(BasePipeline):
                             if complexity_metrics:
                                 optimized_metadata['complexity_metrics'] = complexity_metrics
                         except Exception as e:
-                            logger.debug(f"Could not calculate complexity metrics for optimized {model_name}: {str(e)}")
+                            self.job_logger.debug(f"Could not calculate complexity metrics for optimized {model_name}: {str(e)}")
                         
                         training_metadata['models'][optimized_name] = optimized_metadata
                         
                     except Exception as e:
                         error_msg = f"Failed to optimize {model_name} with Random Search: {str(e)}"
-                        logger.error(error_msg, exc_info=True)
-                        logger.debug(f"Traceback: {traceback.format_exc()}")
+                        self.job_logger.error(error_msg, exc_info=True)
+                        self.job_logger.debug(f"Traceback: {traceback.format_exc()}")
                         training_metadata['models'][f"{model_name}_optimized"] = {
                             'trained_successfully': False,
                             'error': str(e),
@@ -647,12 +648,12 @@ class RegressionPipeline(BasePipeline):
         
         total_models = len(self.models)
         total_training_time = (datetime.now() - train_start_time).total_seconds()
-        logger.info(f"Successfully trained {total_models} models in {total_training_time:.2f} seconds")
+        self.job_logger.info(f"Successfully trained {total_models} models in {total_training_time:.2f} seconds")
         
         # Log some overall performance stats
         successfully_trained = sum(1 for name, meta in training_metadata['models'].items() 
                                    if meta.get('trained_successfully', False))
-        logger.info(f"Training summary: {successfully_trained}/{len(training_metadata['models'])} models trained successfully")
+        self.job_logger.info(f"Training summary: {successfully_trained}/{len(training_metadata['models'])} models trained successfully")
         
         # Update metadata
         training_metadata['total_training_time_seconds'] = total_training_time
@@ -665,7 +666,7 @@ class RegressionPipeline(BasePipeline):
             import psutil
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / (1024 * 1024)
-            logger.debug(f"Memory usage after training all models: {memory_mb:.2f} MB")
+            self.job_logger.debug(f"Memory usage after training all models: {memory_mb:.2f} MB")
         except ImportError:
             pass
         
@@ -702,15 +703,15 @@ class RegressionPipeline(BasePipeline):
         """
         if not self.models:
             error_msg = "No trained models. Call train_models() first."
-            logger.error(error_msg)
+            self.job_logger.error(error_msg)
             raise ValueError(error_msg)
         
-        logger.info("Evaluating regression models...")
+        self.job_logger.info("Evaluating regression models...")
         eval_start_time = datetime.now()
         
         # Log evaluation process
-        logger.debug(f"Evaluating {len(self.models)} trained models")
-        logger.debug(f"Test data dimensions - X_test: {self.X_test.shape}, y_test: {self.y_test.shape}")
+        self.job_logger.debug(f"Evaluating {len(self.models)} trained models")
+        self.job_logger.debug(f"Test data dimensions - X_test: {self.X_test.shape}, y_test: {self.y_test.shape}")
         
         evaluation_metadata = {'models': {}}
         
@@ -718,21 +719,21 @@ class RegressionPipeline(BasePipeline):
         eval_metrics = self.model_config.get('evaluation', {}).get('metrics', ['r2', 'rmse', 'mae'])
         primary_metric = self.model_config.get('evaluation', {}).get('primary_metric', 'r2')
         
-        logger.debug(f"Evaluation metrics: {eval_metrics}, primary metric: {primary_metric}")
+        self.job_logger.debug(f"Evaluation metrics: {eval_metrics}, primary metric: {primary_metric}")
         
         # Transform test data
         preproc_start = datetime.now()
         X_test_processed = self.preprocessor.transform(self.X_test)
         preproc_time = (datetime.now() - preproc_start).total_seconds()
-        logger.debug(f"Test data preprocessing completed in {preproc_time:.2f} seconds")
+        self.job_logger.debug(f"Test data preprocessing completed in {preproc_time:.2f} seconds")
         
         # Check if primary metric is minimizing or maximizing
         if primary_metric in ['rmse', 'mae', 'mape']:
             is_minimizing = True
-            logger.debug(f"Primary metric '{primary_metric}' should be minimized")
+            self.job_logger.debug(f"Primary metric '{primary_metric}' should be minimized")
         else:
             is_minimizing = False
-            logger.debug(f"Primary metric '{primary_metric}' should be maximized")
+            self.job_logger.debug(f"Primary metric '{primary_metric}' should be maximized")
         
         results = []
         
@@ -753,7 +754,7 @@ class RegressionPipeline(BasePipeline):
 
         for name, model in self.models.items():
             try:
-                logger.info(f"Evaluating {name}...")
+                self.job_logger.info(f"Evaluating {name}...")
                 model_eval_metadata = {}
                 eval_start = datetime.now()
                 
@@ -766,7 +767,7 @@ class RegressionPipeline(BasePipeline):
                 y_test_pred = model.predict(X_test_processed)
                 test_pred_time = (datetime.now() - test_pred_start).total_seconds()
                 
-                logger.debug(f"Prediction times - Train: {train_pred_time:.2f}s, Test: {test_pred_time:.2f}s")
+                self.job_logger.debug(f"Prediction times - Train: {train_pred_time:.2f}s, Test: {test_pred_time:.2f}s")
                 
                 # Calculate metrics
                 metrics = {
@@ -810,11 +811,11 @@ class RegressionPipeline(BasePipeline):
                 # Log more detailed analysis
                 overfitting_detected = False
                 if r2_drop > 0.2:  # Arbitrary threshold
-                    logger.warning(f"{name}: Possible overfitting - R² drop of {r2_drop:.4f} (train: {metrics['train_r2']:.4f}, test: {metrics['test_r2']:.4f})")
+                    self.job_logger.warning(f"{name}: Possible overfitting - R² drop of {r2_drop:.4f} (train: {metrics['train_r2']:.4f}, test: {metrics['test_r2']:.4f})")
                     overfitting_detected = True
                 
                 if rmse_increase / metrics['train_rmse'] > 0.3:  # Arbitrary threshold (30% increase)
-                    logger.warning(f"{name}: Possible overfitting - RMSE increase of {rmse_increase:.4f} ({(rmse_increase/metrics['train_rmse'])*100:.1f}%)")
+                    self.job_logger.warning(f"{name}: Possible overfitting - RMSE increase of {rmse_increase:.4f} ({(rmse_increase/metrics['train_rmse'])*100:.1f}%)")
                     overfitting_detected = True
                 
                 # Check for extreme prediction errors
@@ -824,7 +825,7 @@ class RegressionPipeline(BasePipeline):
                 
                 if extreme_error_count > 0:
                     extreme_error_pct = extreme_error_count / len(test_errors) * 100
-                    logger.debug(f"{name}: Found {extreme_error_count} extreme prediction errors ({extreme_error_pct:.2f}% of test data)")
+                    self.job_logger.debug(f"{name}: Found {extreme_error_count} extreme prediction errors ({extreme_error_pct:.2f}% of test data)")
                     
                     # Sample some of these extreme errors for analysis
                     if extreme_error_count > 0:
@@ -832,12 +833,12 @@ class RegressionPipeline(BasePipeline):
                         sample_size = min(3, len(extreme_indices))
                         sample_indices = np.random.choice(extreme_indices, sample_size, replace=False)
                         
-                        logger.debug("Sample of extreme errors:")
+                        self.job_logger.debug("Sample of extreme errors:")
                         for idx in sample_indices:
                             actual = self.y_test.iloc[idx] if hasattr(self.y_test, 'iloc') else self.y_test[idx]
                             predicted = y_test_pred[idx]
                             error = actual - predicted
-                            logger.debug(f"  - Index {idx}: Actual={actual:.4g}, Predicted={predicted:.4g}, Error={error:.4g}")
+                            self.job_logger.debug(f"  - Index {idx}: Actual={actual:.4g}, Predicted={predicted:.4g}, Error={error:.4g}")
                 
                 # Save primary metric value for this model
                 metric_col = f'test_{primary_metric}'
@@ -884,28 +885,28 @@ class RegressionPipeline(BasePipeline):
                 model_eval_metadata['evaluation_time_seconds'] = eval_time
                 
                 # Log results
-                logger.info(f"  {name}:")
-                logger.info(f"    Train R²: {metrics['train_r2']:.4f}, Test R²: {metrics['test_r2']:.4f}")
-                logger.info(f"    Train RMSE: {metrics['train_rmse']:.4f}, Test RMSE: {metrics['test_rmse']:.4f}")
-                logger.info(f"    Train MAE: {metrics['train_mae']:.4f}, Test MAE: {metrics['test_mae']:.4f}")
-                logger.info(f"    Train MAPE: {metrics['train_mape']:.4f}, Test MAPE: {metrics['test_mape']:.4f}")
+                self.job_logger.info(f"  {name}:")
+                self.job_logger.info(f"    Train R²: {metrics['train_r2']:.4f}, Test R²: {metrics['test_r2']:.4f}")
+                self.job_logger.info(f"    Train RMSE: {metrics['train_rmse']:.4f}, Test RMSE: {metrics['test_rmse']:.4f}")
+                self.job_logger.info(f"    Train MAE: {metrics['train_mae']:.4f}, Test MAE: {metrics['test_mae']:.4f}")
+                self.job_logger.info(f"    Train MAPE: {metrics['train_mape']:.4f}, Test MAPE: {metrics['test_mape']:.4f}")
 
                 evaluation_metadata['models'][name] = model_eval_metadata
                 
             except Exception as e:
                 error_msg = f"Failed to evaluate {name}: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                logger.debug(f"Traceback: {traceback.format_exc()}")
+                self.job_logger.error(error_msg, exc_info=True)
+                self.job_logger.debug(f"Traceback: {traceback.format_exc()}")
                 evaluation_metadata['models'][name] = {
                     'evaluation_error': str(e),
                     'traceback': traceback.format_exc()
                 }
         
         # Log metric ranges
-        logger.debug("Metric ranges across all models:")
+        self.job_logger.debug("Metric ranges across all models:")
         for metric_name, range_values in metric_ranges.items():
             if range_values['min'] != float('inf') and range_values['max'] != float('-inf'):
-                logger.debug(f"  {metric_name}: min={range_values['min']:.4f}, max={range_values['max']:.4f}, range={range_values['max']-range_values['min']:.4f}")
+                self.job_logger.debug(f"  {metric_name}: min={range_values['min']:.4f}, max={range_values['max']:.4f}, range={range_values['max']-range_values['min']:.4f}")
         
         # Convert to DataFrame
         self.results = pd.DataFrame(results)
@@ -943,10 +944,10 @@ class RegressionPipeline(BasePipeline):
                     
                     if is_minimizing:
                         improvement = (baseline_value - best_metric_value) / baseline_value * 100
-                        logger.info(f"Best model improves over linear regression baseline by {improvement:.2f}% ({best_metric_value:.4f} vs {baseline_value:.4f})")
+                        self.job_logger.info(f"Best model improves over linear regression baseline by {improvement:.2f}% ({best_metric_value:.4f} vs {baseline_value:.4f})")
                     else:
                         improvement = (best_metric_value - baseline_value) / baseline_value * 100
-                        logger.info(f"Best model improves over linear regression baseline by {improvement:.2f}% ({best_metric_value:.4f} vs {baseline_value:.4f})")
+                        self.job_logger.info(f"Best model improves over linear regression baseline by {improvement:.2f}% ({best_metric_value:.4f} vs {baseline_value:.4f})")
                     
                     evaluation_metadata['improvement_over_baseline'] = {
                         'baseline_model': baseline_model,
@@ -956,14 +957,14 @@ class RegressionPipeline(BasePipeline):
                     }
             
             self.best_model = self.models[best_model_name]
-            logger.info(f"\nBest model: {best_model_name} (Test {primary_metric.upper()} = {best_metric_value:.4f}, {best_comp} among all models)")
+            self.job_logger.info(f"\nBest model: {best_model_name} (Test {primary_metric.upper()} = {best_metric_value:.4f}, {best_comp} among all models)")
             
             # Get predictions from the best model
             best_pred_start = datetime.now()
             best_test_predictions = self.best_model.predict(X_test_processed)
             best_pred_time = (datetime.now() - best_pred_start).total_seconds()
             
-            logger.debug(f"Best model prediction time: {best_pred_time:.4f} seconds for {len(self.y_test)} instances")
+            self.job_logger.debug(f"Best model prediction time: {best_pred_time:.4f} seconds for {len(self.y_test)} instances")
             
             # Additional analysis of best model predictions
             best_errors = self.y_test - best_test_predictions
@@ -993,7 +994,7 @@ class RegressionPipeline(BasePipeline):
             }
         
         eval_total_time = (datetime.now() - eval_start_time).total_seconds()
-        logger.info(f"Model evaluation completed in {eval_total_time:.2f} seconds")
+        self.job_logger.info(f"Model evaluation completed in {eval_total_time:.2f} seconds")
         
         # Update overall metadata
         evaluation_metadata['evaluation_time_seconds'] = eval_total_time
@@ -1010,7 +1011,7 @@ class RegressionPipeline(BasePipeline):
             predictions: Array of predictions on the test set
             max_predictions: Maximum number of predictions to store in metadata
         """
-        logger.info(f"Storing predictions for best model: {model_name}")
+        self.job_logger.info(f"Storing predictions for best model: {model_name}")
         store_start = datetime.now()
         
         # Create a DataFrame with actual and predicted values
@@ -1022,11 +1023,11 @@ class RegressionPipeline(BasePipeline):
         # Fallback to simpler sampling
         if len(prediction_df) > max_predictions:
             sampled_predictions = prediction_df.sample(n=max_predictions, random_state=42)
-            logger.info(f"Storing {len(sampled_predictions)} predictions in metadata (randomly sampled from {len(prediction_df)} total)")
+            self.job_logger.info(f"Storing {len(sampled_predictions)} predictions in metadata (randomly sampled from {len(prediction_df)} total)")
         else:
             # Store all predictions if under the limit
             sampled_predictions = prediction_df
-            logger.info(f"Storing all {len(prediction_df)} predictions in metadata")
+            self.job_logger.info(f"Storing all {len(prediction_df)} predictions in metadata")
     
         # Convert to list for storing in metadata
         predictions_list = []
@@ -1044,4 +1045,4 @@ class RegressionPipeline(BasePipeline):
 
         
         store_time = (datetime.now() - store_start).total_seconds()
-        logger.debug(f"Stored prediction samples in {store_time:.2f} seconds")
+        self.job_logger.debug(f"Stored prediction samples in {store_time:.2f} seconds")

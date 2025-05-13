@@ -90,10 +90,8 @@ class ModelTrainingService:
             log_file = os.path.join(version_dir, "training.log")
             log_handler = None
             try:
-                log_handler = logging.FileHandler(log_file)
-                log_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-                logging.getLogger().addHandler(log_handler)
-                logger.info(f"Training log file created at: {log_file}")
+                job_logger = ml_utils.setup_job_logger(model_id, f"v{version_num}", log_file)
+                logger.info(f"Training log file created at: {log_file} with job-specific logger")
             except Exception as e:
                 logger.warning(f"Could not create log file: {str(e)}")
 
@@ -148,7 +146,8 @@ class ModelTrainingService:
                         config_path=args.config_path,
                         version=args.version,
                         time_col=args.time_col,
-                        forecast_horizon=7
+                        forecast_horizon=7,
+                        job_logger=job_logger
                     )
             except Exception as e:
                 raise 

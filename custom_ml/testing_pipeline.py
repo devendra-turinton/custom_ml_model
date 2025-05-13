@@ -223,8 +223,9 @@ class ModelPredictor:
 
     def _setup_logging(self):
         """Set up logging configuration."""
-        # Configure logging
-        logger = logging.getLogger('model_predictor')
+        # Create a job-specific logger name using model_id and version
+        logger_name = f"model_predictor.{self.model_id}.{self.version}"
+        logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
         
         # Clear any existing handlers
@@ -249,6 +250,9 @@ class ModelPredictor:
         # Add handlers to the logger
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
+        
+        # IMPORTANT: Prevent log propagation to parent loggers
+        logger.propagate = False
         
         # Log startup message
         print(f"Logging initialized. Log file: {log_file}")
@@ -1732,7 +1736,7 @@ class ModelPredictor:
         Returns:
             pd.DataFrame: DataFrame with predictions
         """
-        self.logger.info(f"Starting prediction pipeline - Version: {self.version}")
+        self.logger.info(f"Starting prediction pipeline - Model ID: {self.model_id}, Version: {self.version}")
         pipeline_start = datetime.now()
         
         # Log system resources at pipeline start
@@ -1849,6 +1853,15 @@ class ModelPredictor:
             
             self.logger.info(f"\nResults saved to: {self.output_dir}")
             
+            # IMPORTANT: Clean up logger handlers to prevent memory leaks and log collisions
+            if hasattr(self, 'logger') and self.logger:
+                self.logger.debug(f"Cleaning up logger handlers for {self.model_id}.{self.version}")
+                handlers = list(self.logger.handlers)  # Create a copy of the list
+                for handler in handlers:
+                    self.logger.removeHandler(handler)
+                    handler.close()
+                self.logger.debug(f"Logger handlers cleaned up for {self.model_id}.{self.version}")
+            
             return result_df
             
         except Exception as e:
@@ -1880,6 +1893,13 @@ class ModelPredictor:
             # Log final runtime
             pipeline_runtime = (datetime.now() - pipeline_start).total_seconds()
             self.logger.error(f"Prediction pipeline failed after {pipeline_runtime:.2f} seconds")
+            
+            # IMPORTANT: Clean up logger handlers even on error
+            if hasattr(self, 'logger') and self.logger:
+                handlers = list(self.logger.handlers)  # Create a copy of the list
+                for handler in handlers:
+                    self.logger.removeHandler(handler)
+                    handler.close()
             
             raise
 

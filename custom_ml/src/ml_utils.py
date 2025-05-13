@@ -417,6 +417,38 @@ def load_custom_function(function_path: str, function_name: str) -> Optional[Cal
 #########################################
 # Logging Setup
 #########################################
+def setup_job_logger(model_id, version, log_file):
+    """
+    Creates a job-specific logger that won't interfere with other concurrent jobs.
+    
+    Args:
+        model_id: The model ID
+        version: The version string (e.g., 'v1')
+        log_file: Path to the log file
+        
+    Returns:
+        logger: A configured logger instance for this specific job
+    """
+    # Create a unique logger name for this job
+    logger_name = f"training.{model_id}.{version}"
+    
+    # Get or create logger
+    job_logger = logging.getLogger(logger_name)
+    job_logger.propagate = False  # Prevent propagation to root logger
+    
+    # Set level
+    job_logger.setLevel(logging.DEBUG)
+    
+    # Check if this logger already has handlers (to prevent duplicates)
+    if not job_logger.handlers:
+        # Create file handler
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        file_handler.setFormatter(formatter)
+        job_logger.addHandler(file_handler)
+    
+    return job_logger
 
 def setup_logging(
         log_dir: str = "logs",
@@ -1452,6 +1484,7 @@ def run_default_ml_pipeline(
     model_id: str,
     output_dir: str,  # This should now be the versioned directory
     config: dict,
+    job_logger=None,
     **kwargs
 ) -> tuple:
     """
@@ -1523,7 +1556,9 @@ def run_default_ml_pipeline(
             'target': target,
             'model_id': model_id,
             'output_dir': output_dir,  # Direct to versioned directory
-            'config_path': config_path
+            'config_path': config_path,
+            'job_logger' : job_logger
+            
         }
         
         logger.info(f"Initializing {problem_type} pipeline")

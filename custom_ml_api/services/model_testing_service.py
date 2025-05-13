@@ -100,7 +100,7 @@ class ModelTestingService:
             predictor = ModelPredictor(
                 model_dir=model_dir,
                 output_dir=version_dir,  # Direct path to use
-                model_id=None,           # Set to None to prevent auto-versioning
+                model_id=model_id,           # Set to None to prevent auto-versioning
                 base_data_dir="data"     # Base data directory
             )
             
