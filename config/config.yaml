@@ -9,8 +9,8 @@ common:
     log_dir: "logs"
 
   custom_ml_model:
-    enabled: false  # Toggle for custom model flow
-    function_path: "/home/devendra_yadav/custom_ml_model/data/custom_code/input/123456789/v1/custom_code.py"  # Path to Python module with custom function
+    enabled: true  # Toggle for custom model flow
+    function_path: "/home/devendra_yadav/custom_ml_model/data/custom_code/123456789/v1/custom_code.py"  # Path to Python module with custom function
     function_name: "run_custom_pipeline"  # Name of function to call
   
   # Output settings
