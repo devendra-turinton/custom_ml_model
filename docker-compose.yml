@@ -1,0 +1,12 @@
+services:
+  ml-api:
+    image: custom-ml-model:latest  # Use your existing image
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/observe-custom-ml-service/data
+      - /var/run/docker.sock:/var/run/docker.sock  # Access to Docker socket
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    command: python app.py

@@ -107,7 +107,7 @@ regression:
           l1_ratio: [0.1, 0.3, 0.5, 0.7, 0.9]
       
       ridge:
-        enabled: false
+        enabled: true
         parameters:
           alpha: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
   
@@ -218,7 +218,7 @@ clustering:
   preprocessing:
     # Feature selection
     feature_selection: 
-      enabled: false
+      enabled: true
     # Scaling method
     scaling: "standard"  # Options: "standard", "minmax", "robust", "none"
   

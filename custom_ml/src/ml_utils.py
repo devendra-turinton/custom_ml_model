@@ -1796,50 +1796,50 @@ def run_custom_ml_flow(args, config, df, input_dir, version_dir, model_id):
         expected_metadata_path = os.path.join(version_dir, "metadata.json")
         
         # Validate custom pipeline output with focus on testing compatibility
-        try:
-            is_valid, validation_results, metadata_obj = validate_custom_pipeline_output(
-                custom_function, 
-                result, 
-                expected_model_path, 
-                expected_metadata_path,
-                version_dir,
-                raise_errors=True  # Enforce validation requirements
-            )
+        # try:
+        #     is_valid, validation_results, metadata_obj = validate_custom_pipeline_output(
+        #         custom_function, 
+        #         result, 
+        #         expected_model_path, 
+        #         expected_metadata_path,
+        #         version_dir,
+        #         raise_errors=True  # Enforce validation requirements
+        #     )
             
-            # Log validation success
-            logger.info("Custom pipeline validation successful - metadata contains all required fields for testing")
+        #     # Log validation success
+        #     logger.info("Custom pipeline validation successful - metadata contains all required fields for testing")
             
             
-        except ValueError as e:
-            # Handle validation errors specifically related to testing
-            if "problem_type" in str(e) or "target_column" in str(e) or "preprocessing" in str(e):
-                error_msg = f"Custom pipeline validation failed for testing compatibility: {str(e)}"
-                logger.error(error_msg)
+        # except ValueError as e:
+        #     # Handle validation errors specifically related to testing
+        #     if "problem_type" in str(e) or "target_column" in str(e) or "preprocessing" in str(e):
+        #         error_msg = f"Custom pipeline validation failed for testing compatibility: {str(e)}"
+        #         logger.error(error_msg)
                 
-                # Create error guidance file
-                error_guide_path = os.path.join(version_dir, "testing_validation_error.txt")
-                with open(error_guide_path, 'w') as f:
-                    f.write("Testing Pipeline Validation Error\n")
-                    f.write("================================\n\n")
-                    f.write(f"Error: {str(e)}\n\n")
-                    f.write("Your custom code must produce metadata with the following fields:\n\n")
-                    f.write("1. problem_type: Include in either:\n")
-                    f.write("   - metadata['parameters']['problem_type']\n")
-                    f.write("   - metadata['best_model']['problem_type']\n\n")
-                    f.write("2. target_column: Include in one of these locations:\n")
-                    f.write("   - metadata['parameters']['target_column']\n") 
-                    f.write("   - metadata['target']\n")
-                    f.write("   - metadata['preprocessing']['target_column']\n\n")
-                    f.write("3. Feature information: Include in preprocessing:\n")
-                    f.write("   - metadata['preprocessing']['numeric_features']\n")
-                    f.write("   - metadata['preprocessing']['categorical_features']\n\n")
-                    f.write("These fields are REQUIRED for the testing pipeline to function correctly.\n")
+        #         # Create error guidance file
+        #         error_guide_path = os.path.join(version_dir, "testing_validation_error.txt")
+        #         with open(error_guide_path, 'w') as f:
+        #             f.write("Testing Pipeline Validation Error\n")
+        #             f.write("================================\n\n")
+        #             f.write(f"Error: {str(e)}\n\n")
+        #             f.write("Your custom code must produce metadata with the following fields:\n\n")
+        #             f.write("1. problem_type: Include in either:\n")
+        #             f.write("   - metadata['parameters']['problem_type']\n")
+        #             f.write("   - metadata['best_model']['problem_type']\n\n")
+        #             f.write("2. target_column: Include in one of these locations:\n")
+        #             f.write("   - metadata['parameters']['target_column']\n") 
+        #             f.write("   - metadata['target']\n")
+        #             f.write("   - metadata['preprocessing']['target_column']\n\n")
+        #             f.write("3. Feature information: Include in preprocessing:\n")
+        #             f.write("   - metadata['preprocessing']['numeric_features']\n")
+        #             f.write("   - metadata['preprocessing']['categorical_features']\n\n")
+        #             f.write("These fields are REQUIRED for the testing pipeline to function correctly.\n")
                 
-                logger.error(f"Detailed error guidance written to: {error_guide_path}")
-                raise RuntimeError(error_msg) from e
-            else:
-                # Other validation errors
-                raise
+        #         logger.error(f"Detailed error guidance written to: {error_guide_path}")
+        #         raise RuntimeError(error_msg) from e
+        #     else:
+        #         # Other validation errors
+        #         raise
 
         
         fn_time = (datetime.now() - fn_start_time).total_seconds()

@@ -74,68 +74,105 @@ class ModelTrainingService:
         try:
             # Set up direct paths without creating temporary directories
             input_data_path = f"data/training/input/{model_id}/v1/input_data.csv"
+            input_dir = os.path.dirname(input_data_path)
             output_base_dir = f"data/training/output/{model_id}"
+            
+            # Get next version
             version_dir, version_num = ml_utils.get_next_version_dir(output_base_dir, model_id)
             
             # Create version directory if needed
             os.makedirs(version_dir, exist_ok=True)
             
             # Set up log file in version directory
+            log_file = os.path.join(version_dir, "training.log")
             
             logger.info(f"Using input data: {input_data_path}")
             logger.info(f"Using output directory: {version_dir} (v{version_num})")
             logger.info(f"Using target column: {target}")
             
-            # Set up explicit log file for this training run
-            log_file = os.path.join(version_dir, "training.log")
-            log_handler = None
-            try:
-                job_logger = ml_utils.setup_job_logger(model_id, f"v{version_num}", log_file)
-                logger.info(f"Training log file created at: {log_file} with job-specific logger")
-            except Exception as e:
-                logger.warning(f"Could not create log file: {str(e)}")
-
-            # Load data directly
-            try:
-                logger.info(f"Loading data from {input_data_path}")
-                df = pd.read_csv(input_data_path)
-                logger.info(f"Data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
-            except FileNotFoundError:
-                raise ValidationError(f"Input data file not found: {input_data_path}")
-            except Exception as e:
-                raise ValidationError(f"Error loading input data: {str(e)}")
-            
             # Load configuration
             config = ML_CONFIG
             
-            # Set up args for the ML pipeline
-            class Args:
-                pass
-            
-            args = Args()
-            args.model_id = model_id
-            args.target = target  # Assuming 'target' is the target column
-            args.config_path = CONFIG_PATH
-            args.version = f'v{version_num}'
-            args.time_col = None
-            args.verbose = True
-            args.quiet = False
-            
-            # Run the custom ML flow if enabled, otherwise use default
+            # Check if custom ML flow is enabled
             custom_ml_enabled = config.get('common', {}).get('custom_ml_model', {}).get('enabled', False)
             
+            # ====== CONTAINER-BASED TRAINING ======
             try:
+                # Import the container integration - we do this here to avoid 
+                # unnecessary dependencies if containers are not being used
+                from custom_ml_api.services.container_integration import train_model_in_container
+                
+                # Determine container requirements based on model settings
+                requirements = {
+                    'model_id': model_id,
+                    'custom_flow': custom_ml_enabled,
+                    'python_version': config.get('common', {}).get('python_version', '3.12')
+                }
+                
+                # Log container training approach
+                logger.info(f"Using container-based {'custom' if custom_ml_enabled else 'default'} ML flow")
+                
+                # Train model in container with isolation
+                result, log_output = train_model_in_container(
+                    model_id=model_id,
+                    target=target,
+                    input_dir=input_dir,
+                    output_dir=version_dir,
+                    custom_flow=custom_ml_enabled,
+                    config=config
+                )
+                
+                # Write container logs to log file
+                with open(log_file, 'w') as f:
+                    f.write(log_output)
+                
+                logger.info(f"Container training completed, logs written to {log_file}")
+                
+            except ImportError as e:
+                # If container integration is not available, fall back to direct execution
+                logger.warning(f"Container integration not available: {str(e)}")
+                logger.info("Falling back to direct execution")
+                
+                # ====== FALLBACK TO ORIGINAL FLOW ======
+                # Set up job logger for direct execution
+                try:
+                    job_logger = ml_utils.setup_job_logger(model_id, f"v{version_num}", log_file)
+                    logger.info(f"Training log file created at: {log_file} with job-specific logger")
+                except Exception as e:
+                    logger.warning(f"Could not create log file: {str(e)}")
+                
+                # Load data directly
+                try:
+                    logger.info(f"Loading data from {input_data_path}")
+                    df = pd.read_csv(input_data_path)
+                    logger.info(f"Data loaded: {df.shape[0]} rows, {df.shape[1]} columns")
+                except FileNotFoundError:
+                    raise ValidationError(f"Input data file not found: {input_data_path}")
+                except Exception as e:
+                    raise ValidationError(f"Error loading input data: {str(e)}")
+                
+                # Set up args for the ML pipeline
+                class Args:
+                    pass
+                
+                args = Args()
+                args.model_id = model_id
+                args.target = target
+                args.config_path = CONFIG_PATH
+                args.version = f'v{version_num}'
+                args.time_col = None
+                args.verbose = True
+                args.quiet = False
+                
                 # Execute either custom or default ML flow
                 if custom_ml_enabled:
-                    logger.info("Running custom ML model flow")
+                    logger.info("Running custom ML model flow (direct execution)")
                     best_model, results, model_path, metadata_path = ml_utils.run_custom_ml_flow(
                         args, config, df, os.path.dirname(input_data_path), 
                         version_dir, model_id
                     )
-                    
-
                 else:
-                    logger.info("Running default ML pipeline")
+                    logger.info("Running default ML pipeline (direct execution)")
                     best_model, results, model_path, metadata_path = ml_utils.run_default_ml_pipeline(
                         df=df,
                         target=args.target,
@@ -149,26 +186,48 @@ class ModelTrainingService:
                         forecast_horizon=7,
                         job_logger=job_logger
                     )
-            except Exception as e:
-                raise 
-
+                    
+                # Create result dictionary for consistent return format
+                result = {
+                    "success": True
+                }
+                
+                # Try to extract metadata if available
+                try:
+                    if os.path.exists(metadata_path):
+                        with open(metadata_path, 'r') as f:
+                            metadata = json.load(f)
+                            # Add relevant metadata to result
+                            if 'problem_type' in metadata:
+                                result['problem_type'] = metadata['problem_type']
+                            if 'accuracy' in metadata:
+                                result['accuracy'] = metadata['accuracy']
+                except Exception as e:
+                    logger.warning(f"Could not extract metadata: {str(e)}")
             
             # Calculate training time
             training_time = (datetime.now() - start_time).total_seconds()
             logger.info(f"Model training completed in {training_time:.2f} seconds")
             
-            # Return training results
-            result = {
+            # Prepare API response
+            api_result = {
                 "model_id": model_id,
                 "version": f"v{version_num}",
-                "status": "completed",
+                "status": "completed" if result.get('success', True) else "failed",
                 "training_time_seconds": training_time,
                 "output_directory": version_dir
             }
-
             
-
-            return result
+            # Include model-specific results if available
+            if 'problem_type' in result:
+                api_result['problem_type'] = result['problem_type']
+            if 'accuracy' in result:
+                api_result['accuracy'] = result['accuracy']
+            if 'error' in result:
+                api_result['error'] = result['error']
+                api_result['status'] = "failed"
+            
+            return api_result
             
         except Exception as e:
             logger.error(f"Error in model training for model_id {model_id}: {str(e)}", exc_info=True)
